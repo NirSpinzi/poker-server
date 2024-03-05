@@ -30,7 +30,7 @@ namespace Server_for_projuct2
         private string PrivateKey;
         private string SymmetricKey;
         public static Random _random = new Random();
-        private Node Lobbys = new Node(new string[7]);
+        private static Node Lobbys = new Node(new string[7]);
         private bool isHost = false;
         // Store list of all clients connecting to the server
         // the list is static so all memebers of the chat will be able to obtain list
@@ -42,6 +42,7 @@ namespace Server_for_projuct2
         // information about the client
         private TcpClient _client;
         private string _clientIP;
+        private string _clientNick;
         // used for sending and reciving data
         private byte[] data;
         /// <summary>
@@ -169,6 +170,7 @@ namespace Server_for_projuct2
                                 {
                                     SendMessage("login:ok:");
                                     Console.WriteLine("sent: login ok");
+                                    _clientNick = parts[1];
                                 }
                                 else
                                 {
@@ -257,14 +259,14 @@ namespace Server_for_projuct2
                             if (parts[1].Equals("host"))
                             {
                                 string[] lobby = new string[7];
-                                lobby[0] = _clientIP;
+                                lobby[0] = _clientNick;
                                 Lobbys.setValue(lobby);
                                 isHost= true;
-                                SendMessage("game:hosted");
+                                SendMessage("game:hosted:" + _clientNick);
                             }
                             else if (parts[1].Equals("start"))
                             {
-                                if (Lobbys.getValue()[0].Equals(_clientIP))
+                                if (Lobbys.getValue()[0].Equals(_clientNick))
                                 {
                                     if (Lobbys.getValue()[1] != null)
                                     {
@@ -276,9 +278,12 @@ namespace Server_for_projuct2
                             else if (parts[1].Equals("join"))
                             {
                                 Node temp = Lobbys;
+                                Node temp2 = temp;
+                                //string[] arr;
                                 int x=0;
                                 while (temp != null)
                                 {
+                                    Console.WriteLine(temp.getValue().ToString());
                                     if (temp.getValue()[0]==null) 
                                     {
                                         SendMessage("join:invalid");
@@ -286,22 +291,28 @@ namespace Server_for_projuct2
                                     }
                                     for(int i=1;i<7;i++)
                                     {
+                                        //arr= temp.getValue();
+                                        //Console.WriteLine(arr[i]);
                                         if (temp.getValue()[i] == null)
                                         {
-                                            temp.getValue()[i] = _clientIP;
+                                            temp.setValue(_clientNick,i);
                                             SendMessage("join:valid");
                                             Console.WriteLine("sent:join:valid");
                                             x = i;
+                                            temp = null;
                                             break;
                                         }
-                                        if (i == 6 && temp.getValue()[i]!=null)
-                                            temp=temp.getNext();
+                                        if (i == 6 && temp.getValue()[i] != null)
+                                        {
+                                            temp2 = temp;
+                                            temp = temp.getNext();
+                                        }
                                     }
                                 }
                                 if (x != 0)
                                 {
-                                    SendMessage("join:" + x, temp);
-                                    Console.WriteLine("sent:join:"+x);
+                                    SendMessage("join:" + (x+1) + ":" + _clientNick, temp2);
+                                    Console.WriteLine("sent:join:"+(x+1));
                                 }
                             }
                         }
@@ -350,17 +361,13 @@ namespace Server_for_projuct2
             }
             return StringBuilder.ToString();
         }
-        public void SendMessage(string message, string clientIP)
-        {
-
-        }
         public void SendMessage(string message, Node Lobby)
         {
             foreach (Client client in clientsList)
             {
                 for (int i = 0; i < 7; i++)
                 {
-                    if (client._clientIP.Equals(Lobby.getValue()[i]))
+                    if (client._clientNick.Equals(Lobby.getValue()[i]))
                     {
                         try
                         {
@@ -800,6 +807,11 @@ namespace Server_for_projuct2
             players = arrCount(this.arr);
             if (players == 7)
                 full = true;
+        }
+        public void setValue(string name,int index)
+        {
+            this.arr[index] = name;
+            players++;
         }
         public Node getNext() { return this.next; }
         public void setNext(Node next) { this.next = next; }

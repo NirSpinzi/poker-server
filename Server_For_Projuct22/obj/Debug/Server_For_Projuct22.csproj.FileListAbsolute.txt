@@ -8,3 +8,13 @@ D:\projects\Server_For_Projuct22\Server_For_Projuct22\obj\Debug\Server_For_Proju
 D:\projects\Server_For_Projuct22\Server_For_Projuct22\obj\Debug\Server_For_Projuct22.pdb
 D:\projects\Server_For_Projuct22\Server_For_Projuct22\bin\Debug\Database1.mdf
 D:\projects\Server_For_Projuct22\Server_For_Projuct22\bin\Debug\Database1_log.ldf
+D:\projects\poker-server\Server_For_Projuct22\bin\Debug\Database1.mdf
+D:\projects\poker-server\Server_For_Projuct22\bin\Debug\Database1_log.ldf
+D:\projects\poker-server\Server_For_Projuct22\bin\Debug\Server_For_Projuct22.exe.config
+D:\projects\poker-server\Server_For_Projuct22\bin\Debug\Server_For_Projuct22.exe
+D:\projects\poker-server\Server_For_Projuct22\bin\Debug\Server_For_Projuct22.pdb
+D:\projects\poker-server\Server_For_Projuct22\obj\Debug\Server_For_Projuct22.csproj.AssemblyReference.cache
+D:\projects\poker-server\Server_For_Projuct22\obj\Debug\Server_For_Projuct22.csproj.SuggestedBindingRedirects.cache
+D:\projects\poker-server\Server_For_Projuct22\obj\Debug\Server_For_Projuct22.csproj.CoreCompileInputs.cache
+D:\projects\poker-server\Server_For_Projuct22\obj\Debug\Server_For_Projuct22.exe
+D:\projects\poker-server\Server_For_Projuct22\obj\Debug\Server_For_Projuct22.pdb
