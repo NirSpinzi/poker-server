@@ -30,7 +30,8 @@ namespace Server_for_projuct2
         private string PrivateKey;
         private string SymmetricKey;
         public static Random _random = new Random();
-        private static Node Lobbys = new Node(new string[7]);
+        public static Node Lobbys = new Node(new Client[7]);
+        private string[] Cards = new string[2];
         private bool isHost = false;
         // Store list of all clients connecting to the server
         // the list is static so all memebers of the chat will be able to obtain list
@@ -75,7 +76,15 @@ namespace Server_for_projuct2
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             return new string (Enumerable.Repeat(chars, Length).Select(s => s[_random.Next(s.Length)]).ToArray());
         }
-    public void ReceiveMessage(IAsyncResult ar)
+        public void setCards(string card,int index)
+        {
+            Cards[index] = card;
+        }
+        public string[] getCards()
+        {
+            return Cards;
+        }
+        public void ReceiveMessage(IAsyncResult ar)
         {
             int bytesRead;
             try
@@ -258,61 +267,72 @@ namespace Server_for_projuct2
                             string[] parts = messageReceived.Split(':');
                             if (parts[1].Equals("host"))
                             {
-                                string[] lobby = new string[7];
-                                lobby[0] = _clientNick;
+                                Client[] lobby = new Client[7];
+                                lobby[0] = this;
                                 Lobbys.setValue(lobby);
                                 isHost= true;
                                 SendMessage("game:hosted:" + _clientNick);
                             }
                             else if (parts[1].Equals("start"))
                             {
-                                if (Lobbys.getValue()[0].Equals(_clientNick))
+                                Node temp = Lobbys;
+                                while (temp != null)
                                 {
-                                    if (Lobbys.getValue()[1] != null)
+                                    if (temp.getArrayOfClients()[0]==this)
                                     {
-                                        SendMessage("game:start:ok");
+                                        if (temp.getArrayOfClients()[1] != null)
+                                        {
+                                            GenerateCards(temp);
+                                            foreach (Client client in temp.getArrayOfClients())
+                                            {
+                                                if (client != null)
+                                                {
+                                                    SendMessage(
+                                                    "game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1] + ":" +
+                                                    Lobbys.getArrayOfTableCards()[0] + ":" + Lobbys.getArrayOfTableCards()[1] + ":" +
+                                                    Lobbys.getArrayOfTableCards()[2], client);
+                                                    Console.WriteLine("sent:game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1] + ":" +
+                                                        Lobbys.getArrayOfTableCards()[0] + ":" + Lobbys.getArrayOfTableCards()[1] + ":" +
+                                                        Lobbys.getArrayOfTableCards()[2]);
+                                                }
+                                            }
+                                        }
+                                        else 
+                                        { 
+                                            SendMessage("game:start:not_enough_players");
+                                            Console.WriteLine("sent:game:start:not_enough_players");
+                                        }
                                     }
-                                    else SendMessage("game:start:not_enough_players");
+                                    temp = temp.getNext();
                                 }
                             }
                             else if (parts[1].Equals("join"))
                             {
                                 Node temp = Lobbys;
-                                Node temp2 = temp;
-                                //string[] arr;
                                 int x=0;
                                 while (temp != null)
                                 {
-                                    Console.WriteLine(temp.getValue().ToString());
-                                    if (temp.getValue()[0]==null) 
+                                    if (temp.getArrayOfClients()[0]==null) 
                                     {
                                         SendMessage("join:invalid");
                                         Console.WriteLine("sent:join:invalid");
                                     }
                                     for(int i=1;i<7;i++)
                                     {
-                                        //arr= temp.getValue();
-                                        //Console.WriteLine(arr[i]);
-                                        if (temp.getValue()[i] == null)
+                                        if (temp.getArrayOfClients()[i] == null)
                                         {
-                                            temp.setValue(_clientNick,i);
+                                            temp.setValue(this,i);
                                             SendMessage("join:valid");
                                             Console.WriteLine("sent:join:valid");
                                             x = i;
+                                            SendMessage("join:" + (x + 1) + ":" + _clientNick, temp);
+                                            Console.WriteLine("sent:join:" + (x + 1));
                                             temp = null;
                                             break;
                                         }
-                                        if (i == 6 && temp.getValue()[i] != null)
-                                        {
-                                            temp2 = temp;
+                                        if (i == 6 && temp.getArrayOfClients()[i] != null)
                                             temp = temp.getNext();
-                                        }
                                     }
-                                }
-                                if (x != 0)
-                                {
-                                    SendMessage("join:" + (x+1) + ":" + _clientNick, temp2);
-                                    Console.WriteLine("sent:join:"+(x+1));
                                 }
                             }
                         }
@@ -363,39 +383,64 @@ namespace Server_for_projuct2
         }
         public void SendMessage(string message, Node Lobby)
         {
-            foreach (Client client in clientsList)
+            foreach (Client client in Lobby.getArrayOfClients())
             {
-                for (int i = 0; i < 7; i++)
+                if (client != null)
                 {
-                    if (client._clientNick.Equals(Lobby.getValue()[i]))
+                    try
                     {
-                        try
+                        System.Net.Sockets.NetworkStream ns;
+                        lock (client._client.GetStream())
                         {
-                            System.Net.Sockets.NetworkStream ns;
-                            lock (client._client.GetStream())
+                            if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul")))
                             {
-                                if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul")))
-                                {
-                                    byte[] Key = Encoding.UTF8.GetBytes(client.SymmetricKey);
-                                    byte[] IV = new byte[16];
-                                    message = AESServiceProvider.Encrypt(message, Key, IV);
-                                }
-                                // we use lock to present multiple threads from using the networkstream object
-                                // this is likely to occur when the server is connected to multiple clients all of 
-                                // them trying to access to the networkstram at the same time.
-                                ns = client._client.GetStream();
-                                // Send data to the client
-                                byte[] bytesToSend = System.Text.Encoding.ASCII.GetBytes(message);
-                                ns.Write(bytesToSend, 0, bytesToSend.Length);
-                                ns.Flush();
+                                byte[] Key = Encoding.UTF8.GetBytes(client.SymmetricKey);
+                                byte[] IV = new byte[16];
+                                message = AESServiceProvider.Encrypt(message, Key, IV);
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine(ex.ToString());
+                            // we use lock to present multiple threads from using the networkstream object
+                            // this is likely to occur when the server is connected to multiple clients all of 
+                            // them trying to access to the networkstram at the same time.
+                            ns = client._client.GetStream();
+                            // Send data to the client
+                            byte[] bytesToSend = System.Text.Encoding.ASCII.GetBytes(message);
+                            ns.Write(bytesToSend, 0, bytesToSend.Length);
+                            ns.Flush();
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(ex.ToString());
+                    }
                 }
+            }
+        }
+        public void SendMessage(string message, Client client)
+        {
+            try
+            {
+                System.Net.Sockets.NetworkStream ns;
+                lock (client._client.GetStream())
+                {
+                    if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul")))
+                    {
+                        byte[] Key = Encoding.UTF8.GetBytes(client.SymmetricKey);
+                        byte[] IV = new byte[16];
+                        message = AESServiceProvider.Encrypt(message, Key, IV);
+                    }
+                    // we use lock to present multiple threads from using the networkstream object
+                    // this is likely to occur when the server is connected to multiple clients all of 
+                    // them trying to access to the networkstram at the same time.
+                    ns = client._client.GetStream();
+                    // Send data to the client
+                    byte[] bytesToSend = System.Text.Encoding.ASCII.GetBytes(message);
+                    ns.Write(bytesToSend, 0, bytesToSend.Length);
+                    ns.Flush();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
             }
         }
         public void SendMessage(string message)
@@ -429,6 +474,57 @@ namespace Server_for_projuct2
         /// <summary>
         /// Receives a string that represents a username and checks if the username exists in the sql database - returns true or false.
         /// </summary>
+        private void GenerateCards(Node lobby)
+        {
+            string[] BannedCards = new string[19];
+            string x;
+            foreach(Client client in lobby.getArrayOfClients())
+            {
+                if (client != null)
+                {
+                    for (int i = 0; i < 2; i++)
+                    {
+                        x = getRandomCard(lobby.getArrayOfCards(), BannedCards);
+                        client.setCards(x, i);
+                        for (int j = 0; j < BannedCards.Length; j++)
+                        {
+                            if (BannedCards[j] == null)
+                            {
+                                BannedCards[j] = x;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            for(int i = 0; i < 5; i++)
+            {
+                x = getRandomCard(lobby.getArrayOfCards(), BannedCards);
+                lobby.setTableCard(x);
+                for (int j = 0; j < BannedCards.Length; j++)
+                {
+                    if (BannedCards[j] == null)
+                    {
+                        BannedCards[j] = x;
+                        break;
+                    }
+                }
+            }
+        }
+        private string getRandomCard(string[] CardArray, string[] BannedCards)
+        {
+            Random rnd = new Random();
+            int x = rnd.Next(CardArray.Length);
+                for (int i = 0; i < BannedCards.Length; i++)
+                {
+                    if (BannedCards[i] != null && CardArray[x].Equals(BannedCards[i]))
+                    {
+                        x = rnd.Next(CardArray.Length);
+                        i = -1;
+                    }
+                }
+            return CardArray[x];
+        }
         /// <param name="username"></param>
         /// <returns></returns>
         private bool isExistUsername(String username)
@@ -781,49 +877,51 @@ namespace Server_for_projuct2
             return plaintext;
         }
     }
-    public class Node
+    class Node
     {
-        private bool full = false;
-        private int players = 0;
-        private string[]arr;
+        private Client[] ClientArray;
+        private string[] CardArray = {"diamond:2","diamond:3","diamond:4","diamond:5", "diamond:6", "diamond:7", "diamond:8"
+        ,"diamond:9","diamond:10","diamond:11","diamond:12","diamond:13","diamond:14","club:2","club:3","club:4","club:5","club:6","club:7","club:8"
+        ,"club:9","club:10","club:11","club:12","club:13","club:14","spade:2","spade:3","spade:4","spade:5","spade:6","spade:7","spade:8","spade:9"
+        ,"spade:10","spade:11","spade:12","spade:13","spade:14","heart:2","heart:3","heart:4","heart:5","heart:6","heart:7","heart:8","heart:9","heart:10"
+        ,"heart:11","heart:12","heart:13","heart:14"};
+        private string[] TableCards = new string[5];
         private Node next;
-        public Node(string[] arr)
+        public Node(Client[] arr)
         {
-            players = arrCount(arr) ;
-            this.arr = arr;
+            this.ClientArray = arr;
             this.next = null;
-            if(players==7)
-                full= true;
         }
-        public Node(string[] arr, Node next)
+        public Node(Client[] arr, Node next)
         {
-            this.arr = arr;
+            this.ClientArray = arr;
             this.next = next;
         }
-        public string[] getValue() { return this.arr; }
-        public void setValue(string[] arr) 
+        public Client[] getArrayOfClients() { return this.ClientArray; }
+        public string[] getArrayOfCards() { return this.CardArray; }
+        public string[] getArrayOfTableCards() { return this.TableCards; }
+        public void setValue(Client[] arr) 
         { 
-            this.arr = arr; 
-            players = arrCount(this.arr);
-            if (players == 7)
-                full = true;
+            this.ClientArray = arr; 
         }
-        public void setValue(string name,int index)
+        public void setValue(Client client,int index)
         {
-            this.arr[index] = name;
-            players++;
+            this.ClientArray[index] = client;
+        }
+        public void setTableCard(string card)
+        {
+            for(int i=0;i<TableCards.Length;i++)
+            {
+                if (TableCards[i] == null)
+                {
+                    TableCards[i] = card;
+                    break;
+                }
+            }
         }
         public Node getNext() { return this.next; }
         public void setNext(Node next) { this.next = next; }
         public bool hasNext() { return this.next != null; }
-        public String toString() { return this.arr + " " + this.next; }
-        public static int arrCount(string[] a)
-        {
-            int sum = 0;
-            for (int i = 0; i < a.Length; i++)
-                if (a[i] != null)
-                    sum++;
-            return sum;
-        }
+        public String toString() { return this.ClientArray + " " + this.next; }
     }
 }
