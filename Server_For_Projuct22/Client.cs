@@ -326,7 +326,7 @@ namespace Server_for_projuct2
                                             x = i;
                                             Thread.Sleep(1000);
                                             SendMessage("join:" + (x + 1) + ":" + _clientNick, temp);
-                                            Console.WriteLine("sent:join:" + (x + 1));
+                                            Console.WriteLine("sent:join:" + (x + 1) + _clientNick);
                                             temp = null;
                                             break;
                                         }
@@ -367,11 +367,13 @@ namespace Server_for_projuct2
                                     if (temp.getArrayOfClients()[i] != null && temp.getArrayOfClients()[i]==this)
                                     {
                                         SendMessage("table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick());
+                                        Console.WriteLine("sent:table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick());
                                         for (int j = 1; j < 7; j++)
                                         {
                                             if (temp.getArrayOfClients()[j] != null && temp.getArrayOfClients()[j] != this)
                                             {
-                                                SendMessage("table_names:" + j + ":" + temp.getArrayOfClients()[j].getClientNick());
+                                                SendMessage("table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick());
+                                                Console.WriteLine("sent:table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick());
                                             }
                                         }
                                         temp = null;
