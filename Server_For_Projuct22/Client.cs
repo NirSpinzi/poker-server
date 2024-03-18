@@ -17,6 +17,7 @@ using System.CodeDom.Compiler;
 using System.Security.Cryptography;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace Server_for_projuct2
 {
@@ -44,6 +45,7 @@ namespace Server_for_projuct2
         private TcpClient _client;
         private string _clientIP;
         private string _clientNick;
+        private static string SQLFilePath = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\poker-server\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
         // used for sending and reciving data
         private byte[] data;
         /// <summary>
@@ -71,6 +73,7 @@ namespace Server_for_projuct2
         /// Receives a messege from the client and acts in accordance to the messege that was received.
         /// </summary>
         /// <param name="ar"></param>
+        public string getClientNick() { return _clientNick; }
          public static string RandomKey(int Length)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -137,7 +140,7 @@ namespace Server_for_projuct2
                             }
                             else
                             {
-                                string connectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\Server_For_Projuct22\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
+                                string connectionString = SQLFilePath;
                                 SqlConnection connection = new SqlConnection(connectionString);
                                 SqlCommand cmd = new SqlCommand();
                                 cmd.Connection = connection;
@@ -164,7 +167,7 @@ namespace Server_for_projuct2
                         if (messageReceived.StartsWith("login:"))
                         {
                             string[] parts = messageReceived.Split(':');
-                            string connectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\Server_For_Projuct22\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
+                            string connectionString = SQLFilePath;
                             SqlConnection connection = new SqlConnection(connectionString);
                             SqlCommand cmd = new SqlCommand();
                             cmd.Connection = connection;
@@ -241,7 +244,7 @@ namespace Server_for_projuct2
                             }
                             else if (parts[1].Equals("password"))
                             {
-                                string connectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\Server_For_Projuct22\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
+                                string connectionString = SQLFilePath;
                                 SqlConnection connection = new SqlConnection(connectionString);
                                 SqlCommand cmd = new SqlCommand();
                                 cmd.Connection = connection;
@@ -287,13 +290,8 @@ namespace Server_for_projuct2
                                             {
                                                 if (client != null)
                                                 {
-                                                    SendMessage(
-                                                    "game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1] + ":" +
-                                                    Lobbys.getArrayOfTableCards()[0] + ":" + Lobbys.getArrayOfTableCards()[1] + ":" +
-                                                    Lobbys.getArrayOfTableCards()[2], client);
-                                                    Console.WriteLine("sent:game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1] + ":" +
-                                                        Lobbys.getArrayOfTableCards()[0] + ":" + Lobbys.getArrayOfTableCards()[1] + ":" +
-                                                        Lobbys.getArrayOfTableCards()[2]);
+                                                    client.SendMessage("game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
+                                                    Console.WriteLine("sent:game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
                                                 }
                                             }
                                         }
@@ -316,6 +314,7 @@ namespace Server_for_projuct2
                                     {
                                         SendMessage("join:invalid");
                                         Console.WriteLine("sent:join:invalid");
+                                        break;
                                     }
                                     for(int i=1;i<7;i++)
                                     {
@@ -325,13 +324,21 @@ namespace Server_for_projuct2
                                             SendMessage("join:valid");
                                             Console.WriteLine("sent:join:valid");
                                             x = i;
+                                            Thread.Sleep(1000);
                                             SendMessage("join:" + (x + 1) + ":" + _clientNick, temp);
                                             Console.WriteLine("sent:join:" + (x + 1));
                                             temp = null;
                                             break;
                                         }
                                         if (i == 6 && temp.getArrayOfClients()[i] != null)
+                                        {
                                             temp = temp.getNext();
+                                            if (temp == null)
+                                            {
+                                                SendMessage("join:invalid");
+                                                Console.WriteLine("sent:join:invalid");
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -347,6 +354,32 @@ namespace Server_for_projuct2
                             {
                                 SendMessage("Host:false");
                                 Console.WriteLine("sent:Host:false");
+                            }
+                        }
+                        else if (messageReceived.StartsWith("table"))
+                        {
+                            string[] parts = messageReceived.Split(':');
+                            Node temp = Lobbys;
+                            while (temp != null)
+                            {
+                                for (int i = 1; i < 7; i++)
+                                {
+                                    if (temp.getArrayOfClients()[i] != null && temp.getArrayOfClients()[i]==this)
+                                    {
+                                        SendMessage("table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick());
+                                        for (int j = 1; j < 7; j++)
+                                        {
+                                            if (temp.getArrayOfClients()[j] != null && temp.getArrayOfClients()[j] != this)
+                                            {
+                                                SendMessage("table_names:" + j + ":" + temp.getArrayOfClients()[j].getClientNick());
+                                            }
+                                        }
+                                        temp = null;
+                                        break;
+                                    }
+                                    if (i == 6)
+                                        temp = temp.getNext();
+                                }
                             }
                         }
                     }
@@ -387,60 +420,8 @@ namespace Server_for_projuct2
             {
                 if (client != null)
                 {
-                    try
-                    {
-                        System.Net.Sockets.NetworkStream ns;
-                        lock (client._client.GetStream())
-                        {
-                            if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul")))
-                            {
-                                byte[] Key = Encoding.UTF8.GetBytes(client.SymmetricKey);
-                                byte[] IV = new byte[16];
-                                message = AESServiceProvider.Encrypt(message, Key, IV);
-                            }
-                            // we use lock to present multiple threads from using the networkstream object
-                            // this is likely to occur when the server is connected to multiple clients all of 
-                            // them trying to access to the networkstram at the same time.
-                            ns = client._client.GetStream();
-                            // Send data to the client
-                            byte[] bytesToSend = System.Text.Encoding.ASCII.GetBytes(message);
-                            ns.Write(bytesToSend, 0, bytesToSend.Length);
-                            ns.Flush();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine(ex.ToString());
-                    }
+                    client.SendMessage(message);
                 }
-            }
-        }
-        public void SendMessage(string message, Client client)
-        {
-            try
-            {
-                System.Net.Sockets.NetworkStream ns;
-                lock (client._client.GetStream())
-                {
-                    if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul")))
-                    {
-                        byte[] Key = Encoding.UTF8.GetBytes(client.SymmetricKey);
-                        byte[] IV = new byte[16];
-                        message = AESServiceProvider.Encrypt(message, Key, IV);
-                    }
-                    // we use lock to present multiple threads from using the networkstream object
-                    // this is likely to occur when the server is connected to multiple clients all of 
-                    // them trying to access to the networkstram at the same time.
-                    ns = client._client.GetStream();
-                    // Send data to the client
-                    byte[] bytesToSend = System.Text.Encoding.ASCII.GetBytes(message);
-                    ns.Write(bytesToSend, 0, bytesToSend.Length);
-                    ns.Flush();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.ToString());
             }
         }
         public void SendMessage(string message)
@@ -529,7 +510,7 @@ namespace Server_for_projuct2
         /// <returns></returns>
         private bool isExistUsername(String username)
         {
-            string connectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\Server_For_Projuct22\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
+            string connectionString = SQLFilePath;
 
             SqlConnection connection = new SqlConnection(connectionString);
 
@@ -550,7 +531,7 @@ namespace Server_for_projuct2
         /// <returns></returns>
         private bool isExistPassword(String password)
         {
-            string connectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\Server_For_Projuct22\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
+            string connectionString = SQLFilePath;
 
             SqlConnection connection = new SqlConnection(connectionString);
 
@@ -570,7 +551,7 @@ namespace Server_for_projuct2
         /// <param name="message"></param>
         private bool isExistEmail(String email)
         {
-            string connectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDBFilename=D:\projects\Server_For_Projuct22\Server_For_Projuct22\DATABASE1.MDF;Integrated Security=True";
+            string connectionString = SQLFilePath;
 
         SqlConnection connection = new SqlConnection(connectionString);
 
