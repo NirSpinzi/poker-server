@@ -33,6 +33,7 @@ namespace Server_for_projuct2
         public static Random _random = new Random();
         public static Node Lobbys = new Node(new Client[7]);
         private string[] Cards = new string[2];
+        private int money = 1000000;
         private bool isHost = false;
         // Store list of all clients connecting to the server
         // the list is static so all memebers of the chat will be able to obtain list
@@ -74,6 +75,7 @@ namespace Server_for_projuct2
         /// </summary>
         /// <param name="ar"></param>
         public string getClientNick() { return _clientNick; }
+        public int getMoney() { return money; }
          public static string RandomKey(int Length)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -274,14 +276,14 @@ namespace Server_for_projuct2
                                 lobby[0] = this;
                                 Lobbys.setValue(lobby);
                                 isHost= true;
-                                SendMessage("game:hosted:" + _clientNick);
+                                SendMessage("game:hosted:" + _clientNick + ":" + money);
                             }
                             else if (parts[1].Equals("start"))
                             {
                                 Node temp = Lobbys;
                                 while (temp != null)
                                 {
-                                    if (temp.getArrayOfClients()[0]==this)
+                                    if (temp.getArrayOfClients()[0]==this && temp.getArrayOfTableCards()[0]==null)
                                     {
                                         if (temp.getArrayOfClients()[1] != null)
                                         {
@@ -321,12 +323,12 @@ namespace Server_for_projuct2
                                         if (temp.getArrayOfClients()[i] == null)
                                         {
                                             temp.setValue(this,i);
-                                            SendMessage("join:valid");
-                                            Console.WriteLine("sent:join:valid");
+                                            SendMessage("join:valid:" + money);
+                                            Console.WriteLine("sent:join:valid:" + money);
                                             x = i;
                                             Thread.Sleep(1000);
-                                            SendMessage("join:" + (x + 1) + ":" + _clientNick, temp);
-                                            Console.WriteLine("sent:join:" + (x + 1) + _clientNick);
+                                            SendMessage("join:" + (x + 1) + ":" + _clientNick + ":" + money, temp);
+                                            Console.WriteLine("sent:join:" + (x + 1) + _clientNick + ":" + money);
                                             temp = null;
                                             break;
                                         }
@@ -366,14 +368,14 @@ namespace Server_for_projuct2
                                 {
                                     if (temp.getArrayOfClients()[i] != null && temp.getArrayOfClients()[i]==this)
                                     {
-                                        SendMessage("table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick());
-                                        Console.WriteLine("sent:table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick());
+                                        SendMessage("table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick() + ":" + temp.getArrayOfClients()[0].getMoney());
+                                        Console.WriteLine("sent:table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick() + ":" + temp.getArrayOfClients()[0].getMoney());
                                         for (int j = 1; j < 7; j++)
                                         {
                                             if (temp.getArrayOfClients()[j] != null && temp.getArrayOfClients()[j] != this)
                                             {
-                                                SendMessage("table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick());
-                                                Console.WriteLine("sent:table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick());
+                                                SendMessage("table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick() + ":" + temp.getArrayOfClients()[j].getMoney());
+                                                Console.WriteLine("sent:table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick() + ":" + temp.getArrayOfClients()[j].getMoney());
                                             }
                                         }
                                         temp = null;
@@ -901,6 +903,11 @@ namespace Server_for_projuct2
                     break;
                 }
             }
+        }
+        public void clearTableCards()
+        {
+            for (int i = 0; i < TableCards.Length; i++)
+                TableCards[i] = null;
         }
         public Node getNext() { return this.next; }
         public void setNext(Node next) { this.next = next; }
