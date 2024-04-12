@@ -18,6 +18,12 @@ using System.Security.Cryptography;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Security.Policy;
+using System.Timers;
+using Timer = System.Timers.Timer;
+using System.Reflection.Emit;
+using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace Server_for_projuct2
 {
@@ -32,9 +38,19 @@ namespace Server_for_projuct2
         private string SymmetricKey;
         public static Random _random = new Random();
         public static Node Lobbys = new Node(new Client[7]);
+        private Node ThisLobby;
+        private int TableSitNum;
         private string[] Cards = new string[2];
         private int money = 1000000;
+        private int PlacedBet = 0;
+        private bool IsMyTurn = false;
         private bool isHost = false;
+        private bool IsFolded = false;
+        private int Strikes = 0;
+        private int Warning = 0;
+        private Timer Timeout = new Timer(1000);
+        private int counter;
+        private bool IsTimedOut = false;
         // Store list of all clients connecting to the server
         // the list is static so all memebers of the chat will be able to obtain list
         // of current connected client
@@ -69,6 +85,7 @@ namespace Server_for_projuct2
             // This allows the server to remain responsive and continue accepting new connections from other clients
             // When reading complete control will be transfered to the ReviveMessage() function.
             _client.GetStream().BeginRead(data, 0, System.Convert.ToInt32(_client.ReceiveBufferSize), ReceiveMessage, null);
+            Timeout.Elapsed += Timeout_Tick;
         }
         /// <summary>
         /// Receives a messege from the client and acts in accordance to the messege that was received.
@@ -76,7 +93,130 @@ namespace Server_for_projuct2
         /// <param name="ar"></param>
         public string getClientNick() { return _clientNick; }
         public int getMoney() { return money; }
-         public static string RandomKey(int Length)
+        public void addMoney(int Num)
+        {
+            money += Num;
+        }
+        public void reduceMoney(int Num)
+        {
+            if (money < Num)
+                money = 0;
+            else
+                money -= Num;
+        }
+        public void TurnToNextPlayer(int TableSitNum)
+        {
+            if (TableSitNum != 6)
+            {
+                int i = 1;
+                while ((TableSitNum + i) != 7 && ThisLobby.getArrayOfClients()[TableSitNum + i] != null)
+                {
+                    if (ThisLobby.getArrayOfClients()[TableSitNum + i].IsFolded)
+                        i++;
+                    else
+                    {
+                        ThisLobby.getArrayOfClients()[TableSitNum + i].IsMyTurn = true;
+                        ThisLobby.getArrayOfClients()[TableSitNum + i].SendMessage("turn:");
+                        break;
+                    }
+                }
+                if ((TableSitNum + i) == 7 || ThisLobby.getArrayOfClients()[TableSitNum + i] == null)
+                {
+                    roundEnd();
+                }
+            }
+            else roundEnd();
+        }
+        public void roundEnd()
+        {
+            if (ThisLobby.getRoundNum() == 4)
+            {
+
+            }
+            else
+            {
+                switch (ThisLobby.getRoundNum()) 
+                {
+                    case 1:
+                        {
+                            SendMessage("round:1:" + ThisLobby.getArrayOfTableCards()[0] + ":" + ThisLobby.getArrayOfTableCards()[1] +
+                            ":" + ThisLobby.getArrayOfTableCards()[2], ThisLobby);
+                            ThisLobby.nextRound();
+                            break;
+                        }
+                    case 2:
+                        {
+                            SendMessage("round:2:" + ThisLobby.getArrayOfTableCards()[3], ThisLobby);
+                            ThisLobby.nextRound();
+                            break;
+                        }
+                    case 3:
+                        {
+                            SendMessage("round:3:" + ThisLobby.getArrayOfTableCards()[4], ThisLobby);
+                            ThisLobby.nextRound();
+                            break;
+                        }
+                }
+                if (!ThisLobby.getArrayOfClients()[0].IsFolded)
+                {
+                    ThisLobby.getArrayOfClients()[0].IsMyTurn = true;
+                    ThisLobby.getArrayOfClients()[0].SendMessage("turn:");
+                }
+                else TurnToNextPlayer(0);
+            }
+        }
+        public void TimeoutPlayer()
+        {
+            switch (Warning)
+            {
+                case 1:
+                    {
+                        counter = 31;
+                        IsTimedOut= true;
+                        Timeout.Start();
+                        break;
+                    }
+                case 2:
+                    {
+                        counter = 120;
+                        IsTimedOut = true;
+                        Timeout.Start();
+                        break;
+                    }
+                case 3:
+                    {
+                        counter = 1800;
+                        IsTimedOut = true;
+                        Timeout.Start();
+                        break;
+                    }
+                case 4:
+                    {
+                        counter = 7200;
+                        IsTimedOut = true;
+                        Timeout.Start();
+                        break;
+                    }
+                default:
+                    {
+                        counter = 86400;
+                        IsTimedOut = true;
+                        Timeout.Start();
+                        break;
+                    }
+            }
+        }
+        private void Timeout_Tick(object sender, EventArgs e)
+        {
+            counter--;
+            SendMessage("timeout:" + counter);
+            if (counter == 0)
+            {
+                IsTimedOut= false;
+                Timeout.Stop();
+            }
+        }
+        public static string RandomKey(int Length)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             return new string (Enumerable.Repeat(chars, Length).Select(s => s[_random.Next(s.Length)]).ToArray());
@@ -166,7 +306,7 @@ namespace Server_for_projuct2
                             }
                         }
                         else
-                        if (messageReceived.StartsWith("login:"))
+                        if (messageReceived.StartsWith("login:") && !IsTimedOut)
                         {
                             string[] parts = messageReceived.Split(':');
                             string connectionString = SQLFilePath;
@@ -188,12 +328,24 @@ namespace Server_for_projuct2
                                 }
                                 else
                                 {
+                                    Strikes++;
+                                    if (Strikes % 3 == 0)
+                                    {
+                                        Warning++;
+                                        TimeoutPlayer();
+                                    }
                                     SendMessage("login:Not_ok:");
                                     Console.WriteLine("sent: login not ok");
                                 }
                             }
                             else
                             {
+                                Strikes++;
+                                if (Strikes % 3 == 0)
+                                {
+                                    Warning++;
+                                    TimeoutPlayer();
+                                }
                                 SendMessage("login:captchaIncorrect:");
                                 Console.WriteLine("sent: login captcha incorrect");
                             }
@@ -247,22 +399,30 @@ namespace Server_for_projuct2
                             else if (parts[1].Equals("password"))
                             {
                                 string connectionString = SQLFilePath;
-                                SqlConnection connection = new SqlConnection(connectionString);
-                                SqlCommand cmd = new SqlCommand();
-                                cmd.Connection = connection;
-                                cmd.CommandText = "UPDATE UsersDetails SET password='" + CreateMD5Hash(parts[2]) + "' WHERE email='" + client_email + "'";
-                                connection.Open();
-                                int x = cmd.ExecuteNonQuery();
-                                connection.Close();
-                                if (x > 0)
+                                if (IsPasswordOrUsernameValid(parts[2]))
                                 {
-                                    SendMessage("reset:successful");
-                                    Console.WriteLine("sent: reset successful");
+                                    SqlConnection connection = new SqlConnection(connectionString);
+                                    SqlCommand cmd = new SqlCommand();
+                                    cmd.Connection = connection;
+                                    cmd.CommandText = "UPDATE UsersDetails SET password='" + CreateMD5Hash(parts[2]) + "' WHERE email='" + client_email + "'";
+                                    connection.Open();
+                                    int x = cmd.ExecuteNonQuery();
+                                    connection.Close();
+                                    if (x > 0)
+                                    {
+                                        SendMessage("reset:successful");
+                                        Console.WriteLine("sent: reset successful");
+                                    }
+                                    else
+                                    {
+                                        SendMessage("reset:eror");
+                                        Console.WriteLine("sent: reset eror");
+                                    }
                                 }
-                                else 
+                                else
                                 {
-                                    SendMessage("reset:eror");
-                                    Console.WriteLine("sent: reset eror");
+                                    SendMessage("reset:password_not_valid");
+                                    Console.WriteLine("sent:reset:password_not_valid");
                                 }
                             }
                             else SendMessage("reset:email:notexist");
@@ -270,13 +430,33 @@ namespace Server_for_projuct2
                         else if (messageReceived.StartsWith("game"))
                         {
                             string[] parts = messageReceived.Split(':');
-                            if (parts[1].Equals("host"))
+                            if (parts[1].Equals("host") && !isHost)
                             {
+                                Node temp = Lobbys;
                                 Client[] lobby = new Client[7];
                                 lobby[0] = this;
-                                Lobbys.setValue(lobby);
-                                isHost= true;
-                                SendMessage("game:hosted:" + _clientNick + ":" + money);
+                                while (temp != null)
+                                {
+                                    if (temp.getArrayOfClients()[0] == null)
+                                    {
+                                        isHost = true;
+                                        temp.setValue(lobby);
+                                        ThisLobby = temp;
+                                        TableSitNum = 0;
+                                        SendMessage("game:hosted:" + _clientNick + ":" + money);
+                                        break;
+                                    }
+                                    else if (temp.getNext() == null)
+                                    {
+                                        isHost = true;
+                                        temp.setNext(new Node(lobby));
+                                        ThisLobby = temp;
+                                        TableSitNum = 0;
+                                        SendMessage("game:hosted:" + _clientNick + ":" + money);
+                                        break;
+                                    }
+                                    else temp = temp.getNext();
+                                }
                             }
                             else if (parts[1].Equals("start"))
                             {
@@ -296,6 +476,8 @@ namespace Server_for_projuct2
                                                     Console.WriteLine("sent:game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
                                                 }
                                             }
+                                            temp.getArrayOfClients()[0].IsMyTurn = true;
+                                            temp.getArrayOfClients()[0].SendMessage("turn:");
                                         }
                                         else 
                                         { 
@@ -309,7 +491,6 @@ namespace Server_for_projuct2
                             else if (parts[1].Equals("join"))
                             {
                                 Node temp = Lobbys;
-                                int x=0;
                                 while (temp != null)
                                 {
                                     if (temp.getArrayOfClients()[0]==null) 
@@ -323,12 +504,13 @@ namespace Server_for_projuct2
                                         if (temp.getArrayOfClients()[i] == null)
                                         {
                                             temp.setValue(this,i);
+                                            ThisLobby = temp;
+                                            TableSitNum = i;
                                             SendMessage("join:valid:" + money);
                                             Console.WriteLine("sent:join:valid:" + money);
-                                            x = i;
-                                            Thread.Sleep(1000);
-                                            SendMessage("join:" + (x + 1) + ":" + _clientNick + ":" + money, temp);
-                                            Console.WriteLine("sent:join:" + (x + 1) + _clientNick + ":" + money);
+                                            Thread.Sleep(800);
+                                            SendMessage("join:" + (i + 1) + ":" + _clientNick + ":" + money, temp);
+                                            Console.WriteLine("sent:join:" + (i + 1) + _clientNick + ":" + money);
                                             temp = null;
                                             break;
                                         }
@@ -361,28 +543,145 @@ namespace Server_for_projuct2
                         else if (messageReceived.StartsWith("table"))
                         {
                             string[] parts = messageReceived.Split(':');
-                            Node temp = Lobbys;
-                            while (temp != null)
+                            if (parts[1].Equals("names"))
                             {
-                                for (int i = 1; i < 7; i++)
+                                Node temp = Lobbys;
+                                while (temp != null)
                                 {
-                                    if (temp.getArrayOfClients()[i] != null && temp.getArrayOfClients()[i]==this)
+                                    for (int i = 1; i < 7; i++)
                                     {
-                                        SendMessage("table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick() + ":" + temp.getArrayOfClients()[0].getMoney());
-                                        Console.WriteLine("sent:table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick() + ":" + temp.getArrayOfClients()[0].getMoney());
-                                        for (int j = 1; j < 7; j++)
+                                        if (temp.getArrayOfClients()[i] != null && temp.getArrayOfClients()[i] == this)
                                         {
-                                            if (temp.getArrayOfClients()[j] != null && temp.getArrayOfClients()[j] != this)
+                                            SendMessage("table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick() + ":" + temp.getArrayOfClients()[0].getMoney());
+                                            Console.WriteLine("sent:table_names:" + parts[2] + ":" + temp.getArrayOfClients()[0].getClientNick() + ":" + temp.getArrayOfClients()[0].getMoney());
+                                            for (int j = 1; j < 7; j++)
                                             {
-                                                SendMessage("table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick() + ":" + temp.getArrayOfClients()[j].getMoney());
-                                                Console.WriteLine("sent:table_names:" + (j+1) + ":" + temp.getArrayOfClients()[j].getClientNick() + ":" + temp.getArrayOfClients()[j].getMoney());
+                                                if (temp.getArrayOfClients()[j] != null && temp.getArrayOfClients()[j] != this)
+                                                {
+                                                    SendMessage("table_names:" + (j + 1) + ":" + temp.getArrayOfClients()[j].getClientNick() + ":" + temp.getArrayOfClients()[j].getMoney());
+                                                    Console.WriteLine("sent:table_names:" + (j + 1) + ":" + temp.getArrayOfClients()[j].getClientNick() + ":" + temp.getArrayOfClients()[j].getMoney());
+                                                }
                                             }
+                                            temp = null;
+                                            break;
                                         }
-                                        temp = null;
+                                        if (i == 6)
+                                            temp = temp.getNext();
+                                    }
+                                }
+                            }
+                            else if (parts[1].Equals("bets"))
+                            {
+                                //SendMessage("call:" + parts[4] + ":" + parts[3] + ":" + TableSitNum + ":" + parts[2] + ":" 
+                                //    + ThisLobby.getArrayOfClients()[0].PlacedBet);
+                                if (ThisLobby.getArrayOfClients()[0].PlacedBet < ThisLobby.getTableBetAmount())
+                                {
+                                    SendMessage("call:" + 0 + ":" + 0 + ":" + TableSitNum + ":" + parts[2] + ":" + ThisLobby.getArrayOfClients()[0].PlacedBet);
+                                    Console.WriteLine("sent:call:" + 0 + ":" + 0 + ":" + TableSitNum + ":" + parts[2] + ":" + ThisLobby.getArrayOfClients()[0].PlacedBet);
+                                }
+                                else
+                                {
+                                    SendMessage("call:" + (ThisLobby.getTableBetAmount() - ThisLobby.getArrayOfClients()[0].PlacedBet) + ":"
+                                    + parts[3] + ":" + TableSitNum + ":" + parts[2] + ":" + ThisLobby.getArrayOfClients()[0].PlacedBet);
+                                    Console.WriteLine("sent:call:" + (ThisLobby.getTableBetAmount() - ThisLobby.getArrayOfClients()[0].PlacedBet) + ":"
+                                    + parts[3] + ":" + TableSitNum + ":" + parts[2] + ":" + ThisLobby.getArrayOfClients()[0].PlacedBet);
+                                }
+                            }
+                            else if (parts[1].Equals("folds"))
+                            {
+                                SendMessage("fold:" + TableSitNum + ":" + parts[2]);
+                                Console.WriteLine("sent:fold:" + TableSitNum + ":" + parts[2]);
+                            }
+                            else if (parts[1].Equals("raise"))
+                            {
+                                SendMessage("raise:" + parts[2] + ":" + TableSitNum + ":" + parts[3] + ":" + ThisLobby.getArrayOfClients()[0].money);
+                                Console.WriteLine("sent:raise:" + parts[2] + ":" + TableSitNum + ":" + parts[3] + ":" + ThisLobby.getArrayOfClients()[0].money);
+                            }
+                        }
+                        else if (messageReceived.StartsWith("call"))
+                        {
+                            if (IsMyTurn && !IsFolded)
+                            {
+                                IsMyTurn = false;
+                                if ((ThisLobby.getTableBetAmount() - PlacedBet) > money)
+                                {
+                                    ThisLobby.addTableTotalMoney(money);
+                                    SendMessage("call:" + money + ":" + money + ":" + TableSitNum + ":" + _clientNick + ":" + PlacedBet, ThisLobby);
+                                    Console.WriteLine("sent:call:" + money + ":" + money + ":" + TableSitNum + ":" + _clientNick + ":" + PlacedBet);
+                                    PlacedBet += money;
+                                    reduceMoney(money);
+                                }
+                                else
+                                {
+                                    ThisLobby.addTableTotalMoney(ThisLobby.getTableBetAmount() - PlacedBet);
+                                    SendMessage("call:" + (ThisLobby.getTableBetAmount() - PlacedBet) + ":" + money + ":" + TableSitNum + ":" + _clientNick
+                                        + ":" + PlacedBet, ThisLobby);
+                                    Console.WriteLine("sent:call:" + (ThisLobby.getTableBetAmount() - PlacedBet) + ":" + money + ":" + TableSitNum + ":"
+                                        + _clientNick + ":" + PlacedBet);
+                                    reduceMoney(ThisLobby.getTableBetAmount() - PlacedBet);
+                                    PlacedBet = ThisLobby.getTableBetAmount();
+                                }
+                                TurnToNextPlayer(TableSitNum);
+                            }
+                        }
+                        else if (messageReceived.StartsWith("fold"))
+                        {
+                            if(IsMyTurn && !IsFolded)
+                            {
+                                IsMyTurn= false;
+                                IsFolded = true;
+                                SendMessage("fold:" + TableSitNum + ":" + _clientNick, ThisLobby);
+                                Console.WriteLine("sent:fold:" + TableSitNum + ":" + _clientNick);
+                                TurnToNextPlayer(TableSitNum);
+                            }
+                        }
+                        else if (messageReceived.StartsWith("raise"))
+                        {
+                            if (IsMyTurn && !IsFolded)
+                            {
+                                IsMyTurn = false;
+                                string[] parts = messageReceived.Split(':');
+                                if (parts[1].Equals(""))
+                                    SendMessage("raise:nothing_inserted");
+                                try
+                                {
+                                    int raiseNum = int.Parse(parts[1]);
+                                    if (raiseNum > money)
+                                        SendMessage("raise:not_enough_money");
+                                    else
+                                    {
+                                        reduceMoney(raiseNum);
+                                        SendMessage("raise:" + (PlacedBet + raiseNum) + ":" + TableSitNum + ":" + _clientNick + ":" + money, ThisLobby);
+                                        Console.WriteLine("sent:raise:" + (PlacedBet + raiseNum) + ":" + TableSitNum + ":" + _clientNick + ":" + money);
+                                        ThisLobby.setTableBetAmount(PlacedBet + raiseNum);
+                                        ThisLobby.addTableTotalMoney(raiseNum);
+                                        PlacedBet = raiseNum;
+                                        Thread.Sleep(1000);
+                                        TurnToNextPlayer(-1);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    SendMessage("raise:not_a_number");
+                                }
+                            }
+                        }
+                        else if (messageReceived.StartsWith("leave"))
+                        {
+                            //ThisLobby.getArrayOfClients()[TableSitNum] = null;
+                            int i;
+                            if(TableSitNum != 6)
+                            {
+                                for(i = 0; i < 7-TableSitNum; i++)
+                                {
+                                    if (TableSitNum + i + 1 != 7 || ThisLobby.getArrayOfClients()[TableSitNum + i + 1] != null)
+                                        ThisLobby.getArrayOfClients()[TableSitNum + i] = ThisLobby.getArrayOfClients()[TableSitNum + i + 1];
+                                    else 
+                                    {
+                                        ThisLobby.getArrayOfClients()[TableSitNum + i] = null;
                                         break;
                                     }
-                                    if (i == 6)
-                                        temp = temp.getNext();
+                                    SendMessage("switch:" + (TableSitNum+i),ThisLobby);
                                 }
                             }
                         }
@@ -515,18 +814,17 @@ namespace Server_for_projuct2
         private bool isExistUsername(String username)
         {
             string connectionString = SQLFilePath;
+                SqlConnection connection = new SqlConnection(connectionString);
 
-            SqlConnection connection = new SqlConnection(connectionString);
+                SqlCommand cmd = new SqlCommand();
 
-            SqlCommand cmd = new SqlCommand();
+                cmd.Connection = connection;
+                cmd.CommandText = "SELECT COUNT(*) FROM UsersDetails WHERE username='" + username + "'";
 
-            cmd.Connection = connection;
-            cmd.CommandText = "SELECT COUNT(*) FROM UsersDetails WHERE username='" + username + "'";
-
-            connection.Open();
-            int c = (int)cmd.ExecuteScalar();
-            connection.Close();
-            return c > 0;
+                connection.Open();
+                int c = (int)cmd.ExecuteScalar();
+                connection.Close();
+                return c > 0;
         }
         /// <summary>
         /// Receives a string that represents a password and checks if the password exists in the sql database - returns true or false.
@@ -536,18 +834,28 @@ namespace Server_for_projuct2
         private bool isExistPassword(String password)
         {
             string connectionString = SQLFilePath;
+                SqlConnection connection = new SqlConnection(connectionString);
 
-            SqlConnection connection = new SqlConnection(connectionString);
+                SqlCommand cmd = new SqlCommand();
 
-            SqlCommand cmd = new SqlCommand();
+                cmd.Connection = connection;
+                cmd.CommandText = "SELECT COUNT(*) FROM UsersDetails WHERE password='" + CreateMD5Hash(password) + "'";
 
-            cmd.Connection = connection;
-            cmd.CommandText = "SELECT COUNT(*) FROM UsersDetails WHERE password='" + CreateMD5Hash(password) + "'";
+                connection.Open();
+                int c = (int)cmd.ExecuteScalar();
+                connection.Close();
+                return c > 0;
+        }
+        static bool IsPasswordOrUsernameValid(string password)
+        {
+            // Regular expression to check for at least one uppercase letter, one lowercase letter, and one digit
+            string pattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$";
 
-            connection.Open();
-            int c = (int)cmd.ExecuteScalar();
-            connection.Close();
-            return c > 0;
+            // Match the password against the pattern
+            Match match = Regex.Match(password, pattern);
+
+            // If the match is successful, the password meets the criteria
+            return match.Success;
         }
         /// <summary>
         /// Receives a string and sends it to all the clients that are connected to the server.
@@ -556,20 +864,29 @@ namespace Server_for_projuct2
         private bool isExistEmail(String email)
         {
             string connectionString = SQLFilePath;
+                SqlConnection connection = new SqlConnection(connectionString);
 
-        SqlConnection connection = new SqlConnection(connectionString);
+                SqlCommand cmd = new SqlCommand();
 
-        SqlCommand cmd = new SqlCommand();
+                cmd.Connection = connection;
+                cmd.CommandText = "SELECT COUNT(*) FROM UsersDetails WHERE email='" + email + "'";
 
-        cmd.Connection = connection;
-            cmd.CommandText = "SELECT COUNT(*) FROM UsersDetails WHERE email='" + email + "'";
-
-            connection.Open();
-            int c = (int)cmd.ExecuteScalar();
-        connection.Close();
-            return c > 0;
+                connection.Open();
+                int c = (int)cmd.ExecuteScalar();
+                connection.Close();
+                return c > 0;
         }
-}
+        private bool IsValidEmail(string email)
+        {
+            // Define a regular expression for email validation
+            string pattern = @"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$";
+
+            Regex regex = new Regex(pattern);
+
+            // Check if the email matches the regular expression
+            return regex.IsMatch(email);
+        }
+    }
     public class Emailer
     {
         private string smtpServer;
@@ -871,6 +1188,9 @@ namespace Server_for_projuct2
         ,"spade:10","spade:11","spade:12","spade:13","spade:14","heart:2","heart:3","heart:4","heart:5","heart:6","heart:7","heart:8","heart:9","heart:10"
         ,"heart:11","heart:12","heart:13","heart:14"};
         private string[] TableCards = new string[5];
+        private int TableBetAmount = 5000;
+        private int TableTotalMoney = 0;
+        private int RoundNum = 1;
         private Node next;
         public Node(Client[] arr)
         {
@@ -889,6 +1209,17 @@ namespace Server_for_projuct2
         { 
             this.ClientArray = arr; 
         }
+        public int getRoundNum() { return this.RoundNum; }
+        public void nextRound() { this.RoundNum += 1; }
+        public void restRounds() { this.RoundNum = 1; }
+        public void addTableTotalMoney(int Num)
+        {
+            this.TableTotalMoney =+ Num;
+        }
+        public void setTableBetAmount(int Num)
+        {
+            TableBetAmount = Num;
+        }
         public void setValue(Client client,int index)
         {
             this.ClientArray[index] = client;
@@ -904,6 +1235,7 @@ namespace Server_for_projuct2
                 }
             }
         }
+        public int getTableBetAmount() { return this.TableBetAmount; }
         public void clearTableCards()
         {
             for (int i = 0; i < TableCards.Length; i++)
