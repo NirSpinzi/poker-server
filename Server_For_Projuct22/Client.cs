@@ -55,6 +55,7 @@ namespace Server_for_projuct2
         private Timer InGameTimer = new Timer(1000);
         private int counter;
         private bool IsTimedOut = false;
+        private bool IsSpectating = false;
         // Store list of all clients connecting to the server
         // the list is static so all memebers of the chat will be able to obtain list
         // of current connected client
@@ -109,22 +110,26 @@ namespace Server_for_projuct2
             else
                 money -= Num;
         }
+        public void setPlacedBet(int Num)
+        {
+            PlacedBet = Num;
+        }
         public void TurnTimer(object sender, EventArgs e)
         {
-            counter--;
-            //SendMessage("in_game_timer:" + counter);
-            //Console.WriteLine("sent:in_game_timer:" + counter);
+            /*counter--;
+            SendMessage("in_game_timer:" + counter);
+            Console.WriteLine("sent:in_game_timer:" + counter);
             if (counter == 0)
             {
                 InGameStrikes++;
                 if (InGameStrikes == 1)
                 {
-                    //SendMessage("kick_next_time");
-                    //IsFolded = true;
-                    //IsMyTurn = false;
-                    //Thread.Sleep(50);
-                    //SendMessage("fold:" + TableSitNum + ":" + _clientNick, ThisLobby);
-                    //Console.WriteLine("sent:fold:" + TableSitNum + ":" + _clientNick);
+                    SendMessage("kick_next_time");
+                    IsFolded = true;
+                    IsMyTurn = false;
+                    Thread.Sleep(50);
+                    SendMessage("fold:" + TableSitNum + ":" + _clientNick, ThisLobby);
+                    Console.WriteLine("sent:fold:" + TableSitNum + ":" + _clientNick);
                 }
                 else if (InGameStrikes == 2)
                 {
@@ -132,7 +137,7 @@ namespace Server_for_projuct2
                     InGameStrikes = 0;
                 }
                 InGameTimer.Stop();
-            }
+            }*/
         }
         public void TurnToNextPlayer(int TableSitNum)
         {
@@ -141,7 +146,7 @@ namespace Server_for_projuct2
                 int i = 1;
                 while ((TableSitNum + i) != 7 && ThisLobby.getArrayOfClients()[TableSitNum + i] != null)
                 {
-                    if (ThisLobby.getArrayOfClients()[TableSitNum + i].IsFolded)
+                    if (ThisLobby.getArrayOfClients()[TableSitNum + i].IsFolded || ThisLobby.getArrayOfClients()[TableSitNum + i].IsSpectating)
                         i++;
                     else
                     {
@@ -159,21 +164,43 @@ namespace Server_for_projuct2
             }
             else roundEnd();
         }
+        public bool CheckIfAllAreFolded()
+        {
+            int VacantSits = 0;
+            int FoldedPlayers = 0;
+            foreach(Client client in ThisLobby.getArrayOfClients())
+            {
+                if (client == null)
+                    VacantSits++;
+                else if (client.IsFolded || client.IsSpectating)
+                    FoldedPlayers++;
+            }
+            if ((7 - VacantSits - FoldedPlayers) == 1)
+                return true;
+            return false;
+        }
+        public void NewGame()
+        {
+            ThisLobby.resetTableTotalMoney();
+            ThisLobby.resetRounds();
+            ThisLobby.resetTableCards();
+            ThisLobby.resetClientBets();
+            ThisLobby.setTableBetAmount(5000);
+            ThisLobby.GameOngoing();
+        }
         public void roundEnd()
         {
             if (ThisLobby.getRoundNum() == 4)
             {
                 for(int i=0;i<7;i++) 
                 {
-                    if (ThisLobby.getArrayOfClients()[i] != null)
+                    if (ThisLobby.getArrayOfClients()[i] != null && !ThisLobby.getArrayOfClients()[i].IsFolded)
                         ThisLobby.setPlayerHandStrength(PokerHandEvaluator.EvaluateHand(ThisLobby.getArrayOfClients()[i].getCards()
                             ,ThisLobby.getArrayOfTableCards()), i);
                 }
                 int SitNumOfWinner = PokerHandEvaluator.FindStrongestHand(ThisLobby.getPlayerHandStrengths());
                 ThisLobby.getArrayOfClients()[SitNumOfWinner].addMoney(ThisLobby.getTableTotalMoney());
-                ThisLobby.resetTableTotalMoney();
-                ThisLobby.setTableBetAmount(5000);
-                ThisLobby.restRounds();
+                ThisLobby.GameNotOngoing();
                 RevealAllCards();
                 Thread.Sleep(50);
                 SendMessage("winner:" + SitNumOfWinner + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinner]._clientNick + ":" +
@@ -527,34 +554,38 @@ namespace Server_for_projuct2
                             }
                             else if (parts[1].Equals("start"))
                             {
-                                Node temp = Lobbys;
-                                while (temp != null)
+                                if (isHost)
                                 {
-                                    if (temp.getArrayOfClients()[0]==this && temp.getArrayOfTableCards()[0]==null)
+                                    Node temp = Lobbys;
+                                    while (temp != null)
                                     {
-                                        if (temp.getArrayOfClients()[1] != null)
+                                        if (temp.getArrayOfClients()[0] == this && temp.getArrayOfTableCards()[0] == null)
                                         {
-                                            GenerateCards(temp);
-                                            foreach (Client client in temp.getArrayOfClients())
+                                            if (temp.getArrayOfClients()[1] != null)
                                             {
-                                                if (client != null)
+                                                GenerateCards(temp);
+                                                foreach (Client client in temp.getArrayOfClients())
                                                 {
-                                                    client.SendMessage("game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
-                                                    Console.WriteLine("sent:game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
+                                                    if (client != null)
+                                                    {
+                                                        client.SendMessage("game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
+                                                        Console.WriteLine("sent:game:start:ok:" + client.getCards()[0] + ":" + client.getCards()[1]);
+                                                    }
                                                 }
+                                                ThisLobby.GameOngoing();
+                                                temp.getArrayOfClients()[0].IsMyTurn = true;
+                                                temp.getArrayOfClients()[0].SendMessage("turn:");
+                                                counter = 30;
+                                                temp.getArrayOfClients()[0].InGameTimer.Start();
                                             }
-                                            temp.getArrayOfClients()[0].IsMyTurn = true;
-                                            temp.getArrayOfClients()[0].SendMessage("turn:");
-                                            counter = 30;
-                                            temp.getArrayOfClients()[0].InGameTimer.Start();
+                                            else
+                                            {
+                                                SendMessage("game:start:not_enough_players");
+                                                Console.WriteLine("sent:game:start:not_enough_players");
+                                            }
                                         }
-                                        else 
-                                        { 
-                                            SendMessage("game:start:not_enough_players");
-                                            Console.WriteLine("sent:game:start:not_enough_players");
-                                        }
+                                        temp = temp.getNext();
                                     }
-                                    temp = temp.getNext();
                                 }
                             }
                             else if (parts[1].Equals("join"))
@@ -575,6 +606,8 @@ namespace Server_for_projuct2
                                             temp.setValue(this,i);
                                             ThisLobby = temp;
                                             TableSitNum = i;
+                                            if(ThisLobby.isGameOngoin())
+                                                IsSpectating = true;
                                             SendMessage("join:valid:" + money);
                                             Console.WriteLine("sent:join:valid:" + money);
                                             Thread.Sleep(600);
@@ -708,7 +741,13 @@ namespace Server_for_projuct2
                                 IsFolded = true;
                                 SendMessage("fold:" + TableSitNum + ":" + _clientNick, ThisLobby);
                                 Console.WriteLine("sent:fold:" + TableSitNum + ":" + _clientNick);
-                                TurnToNextPlayer(TableSitNum);
+                                if (CheckIfAllAreFolded())
+                                {
+                                    ThisLobby.setRoundNum(4);
+                                    roundEnd();
+                                }
+                                else
+                                    TurnToNextPlayer(TableSitNum);
                             }
                         }
                         else if (messageReceived.StartsWith("raise"))
@@ -756,14 +795,44 @@ namespace Server_for_projuct2
                             {
                                 for(i = 0; i < 7-TableSitNum; i++)
                                 {
-                                    if (TableSitNum + i + 1 != 7 || ThisLobby.getArrayOfClients()[TableSitNum + i + 1] != null)
-                                        ThisLobby.getArrayOfClients()[TableSitNum + i] = ThisLobby.getArrayOfClients()[TableSitNum + i + 1];
+                                    if (TableSitNum + i + 1 != 7)
+                                        if(ThisLobby.getArrayOfClients()[TableSitNum + i + 1] != null)
+                                            ThisLobby.getArrayOfClients()[TableSitNum + i] = ThisLobby.getArrayOfClients()[TableSitNum + i + 1];
                                     else 
                                     {
                                         ThisLobby.getArrayOfClients()[TableSitNum + i] = null;
                                         break;
                                     }
                                     SendMessage("switch:" + (TableSitNum+i),ThisLobby);
+                                }
+                            }
+                        }
+                        else if (messageReceived.StartsWith("new_game"))
+                        {
+                            if (isHost)
+                            {
+                                NewGame();
+                                if (ThisLobby.getArrayOfClients()[1] != null)
+                                {
+                                    GenerateCards(ThisLobby);
+                                    foreach (Client client in ThisLobby.getArrayOfClients())
+                                    {
+                                        if (client != null)
+                                        {
+                                             client.SendMessage("game:play_again:" + client.getCards()[0] + ":" + client.getCards()[1]);
+                                             Console.WriteLine("sent:game:play_again:" + client.getCards()[0] + ":" + client.getCards()[1]);
+                                        }
+                                    }
+                                    ThisLobby.GameOngoing();
+                                    ThisLobby.getArrayOfClients()[0].IsMyTurn = true;
+                                    ThisLobby.getArrayOfClients()[0].SendMessage("turn:");
+                                    counter = 30;
+                                    ThisLobby.getArrayOfClients()[0].InGameTimer.Start();
+                                }
+                                else
+                                {
+                                    SendMessage("game:start:not_enough_players");
+                                    Console.WriteLine("sent:game:start:not_enough_players");
                                 }
                             }
                         }
@@ -1285,6 +1354,7 @@ namespace Server_for_projuct2
         private int TableBetAmount = 5000;
         private static int TableTotalMoney = 0;
         private int RoundNum = 1;
+        private bool isGameOngoing = false;
         private Node next;
         public Node(Client[] arr)
         {
@@ -1303,9 +1373,13 @@ namespace Server_for_projuct2
         { 
             this.ClientArray = arr; 
         }
+        public void GameOngoing() { isGameOngoing = true; }
+        public void GameNotOngoing() { isGameOngoing = false; }
+        public bool isGameOngoin() { return isGameOngoing; }
         public int getRoundNum() { return this.RoundNum; }
+        public void setRoundNum(int Num) { RoundNum = Num; }
         public void nextRound() { this.RoundNum += 1; }
-        public void restRounds() { this.RoundNum = 1; }
+        public void resetRounds() { this.RoundNum = 1; }
         public void addTableTotalMoney(int Num)
         {
             TableTotalMoney += Num;
@@ -1331,6 +1405,10 @@ namespace Server_for_projuct2
                 }
             }
         }
+        public void resetTableCards()
+        {
+            TableCards = new string[5];
+        }
         public int getTableBetAmount() { return this.TableBetAmount; }
         public void clearTableCards()
         {
@@ -1346,5 +1424,15 @@ namespace Server_for_projuct2
             PlayerHandStrengths[index] = HS;
         }
         public HandStrength[] getPlayerHandStrengths() { return PlayerHandStrengths; }
+        public void resetClientBets()
+        {
+            foreach(Client client in ClientArray)
+            {
+                if (client != null)
+                {
+                    client.setPlacedBet(0);
+                }
+            }
+        }
     }
 }

@@ -41,7 +41,12 @@ namespace Server_For_Projuct22
             int Index = 0;
             for(int i=1;i< HSArray.Length;i++)
             {
-                if (HSArray[i] != null && (HSArray[i].Strength > HSArray[Index].Strength ||
+                if (HSArray[0] == null)
+                {
+                    if (HSArray[i] != null)
+                        Index = i;
+                }
+                else if (HSArray[i] != null && (HSArray[i].Strength > HSArray[Index].Strength ||
                     (HSArray[i].Strength == HSArray[Index].Strength && HSArray[i].SubStrength > HSArray[Index].SubStrength)))
                     Index = i;
             }
