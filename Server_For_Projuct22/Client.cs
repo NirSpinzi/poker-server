@@ -55,7 +55,9 @@ namespace Server_for_projuct2
         private Timer InGameTimer = new Timer(1000);
         private int counter;
         private bool IsTimedOut = false;
-        private bool IsSpectating = false;
+        private static List<string> LoggedUsers = new List<string>();
+        private bool MarkedToLeave = false;
+        private bool isInGame = false;
         // Store list of all clients connecting to the server
         // the list is static so all memebers of the chat will be able to obtain list
         // of current connected client
@@ -98,7 +100,17 @@ namespace Server_for_projuct2
         /// </summary>
         /// <param name="ar"></param>
         public string getClientNick() { return _clientNick; }
+        public bool isMarkedToLeave()
+        {
+            return MarkedToLeave;
+        }
         public int getMoney() { return money; }
+        public bool isUserLoggedIn(string nickName)
+        {
+            foreach(string username in LoggedUsers)
+                if(username == nickName) return true;
+            return false;
+        }
         public void addMoney(int Num)
         {
             money += Num;
@@ -146,7 +158,7 @@ namespace Server_for_projuct2
                 int i = 1;
                 while ((TableSitNum + i) != 7 && ThisLobby.getArrayOfClients()[TableSitNum + i] != null)
                 {
-                    if (ThisLobby.getArrayOfClients()[TableSitNum + i].IsFolded || ThisLobby.getArrayOfClients()[TableSitNum + i].IsSpectating)
+                    if (ThisLobby.getArrayOfClients()[TableSitNum + i].IsFolded)
                         i++;
                     else
                     {
@@ -157,9 +169,11 @@ namespace Server_for_projuct2
                         break;
                     }
                 }
-                if ((TableSitNum + i) == 7 || ThisLobby.getArrayOfClients()[TableSitNum + i] == null)
-                {
+                if ((TableSitNum + i) == 7)
                     roundEnd();
+                else if (ThisLobby.getArrayOfClients()[TableSitNum + i] == null || ThisLobby.getArrayOfClients()[TableSitNum] == null)
+                {
+                    TurnToNextPlayer(TableSitNum + 1);
                 }
             }
             else roundEnd();
@@ -172,7 +186,7 @@ namespace Server_for_projuct2
             {
                 if (client == null)
                     VacantSits++;
-                else if (client.IsFolded || client.IsSpectating)
+                else if (client.IsFolded)
                     FoldedPlayers++;
             }
             if ((7 - VacantSits - FoldedPlayers) == 1)
@@ -192,21 +206,93 @@ namespace Server_for_projuct2
         {
             if (ThisLobby.getRoundNum() == 4)
             {
-                for(int i=0;i<7;i++) 
+                for (int i = 0; i < 7; i++)
                 {
                     if (ThisLobby.getArrayOfClients()[i] != null && !ThisLobby.getArrayOfClients()[i].IsFolded)
                         ThisLobby.setPlayerHandStrength(PokerHandEvaluator.EvaluateHand(ThisLobby.getArrayOfClients()[i].getCards()
-                            ,ThisLobby.getArrayOfTableCards()), i);
+                            , ThisLobby.getArrayOfTableCards()), i);
                 }
-                int SitNumOfWinner = PokerHandEvaluator.FindStrongestHand(ThisLobby.getPlayerHandStrengths());
-                ThisLobby.getArrayOfClients()[SitNumOfWinner].addMoney(ThisLobby.getTableTotalMoney());
-                ThisLobby.GameNotOngoing();
-                RevealAllCards();
-                Thread.Sleep(50);
-                SendMessage("winner:" + SitNumOfWinner + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinner]._clientNick + ":" +
-                    ThisLobby.getArrayOfClients()[SitNumOfWinner].money, ThisLobby);
-                Console.WriteLine("sent:winner:" + SitNumOfWinner + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinner]._clientNick + ":" +
-                    ThisLobby.getArrayOfClients()[SitNumOfWinner].money);
+                int[] SitNumOfWinnerArray = PokerHandEvaluator.FindStrongestHand(ThisLobby.getPlayerHandStrengths());
+                switch (SitNumOfWinnerArray.Length) 
+                {
+                    case 1:
+                        {
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].addMoney(ThisLobby.getTableTotalMoney());
+                            ThisLobby.GameNotOngoing();
+                            ThisLobby.kickAllMarkedToLeave();
+                            Thread.Sleep(50);
+                            RevealAllCards();
+                            Thread.Sleep(50);
+                            SendMessage("winner:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money, ThisLobby);
+                            Console.WriteLine("sent:winner:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money);
+                            break;
+                        }
+                    case 2:
+                        {
+                            foreach(Client client in ThisLobby.getArrayOfClients())
+                                if(client != null)
+                                    if(client.TableSitNum == SitNumOfWinnerArray[0] || client.TableSitNum == SitNumOfWinnerArray[1])
+                                        client.addMoney(ThisLobby.getTableTotalMoney() / 2);
+                            ThisLobby.GameNotOngoing();
+                            ThisLobby.kickAllMarkedToLeave();
+                            Thread.Sleep(50);
+                            RevealAllCards();
+                            Thread.Sleep(50);
+                            SendMessage("winners:2:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money + ":" + SitNumOfWinnerArray[1] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]].money, ThisLobby);
+                            Console.WriteLine("sent:winners:2:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money + ":" + SitNumOfWinnerArray[1] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]].money);
+                            break;
+                        }
+                    case 3:
+                        {
+                            foreach (Client client in ThisLobby.getArrayOfClients())
+                                if (client != null)
+                                    if (client.TableSitNum == SitNumOfWinnerArray[0] || client.TableSitNum == SitNumOfWinnerArray[1] || client.TableSitNum == SitNumOfWinnerArray[2])
+                                        client.addMoney(ThisLobby.getTableTotalMoney() / 3);
+                            ThisLobby.GameNotOngoing();
+                            ThisLobby.kickAllMarkedToLeave();
+                            Thread.Sleep(50);
+                            RevealAllCards();
+                            Thread.Sleep(50);
+                            SendMessage("winners:3:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money + ":" + SitNumOfWinnerArray[1] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]].money + ":" + SitNumOfWinnerArray[2] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]].money, ThisLobby);
+                            Console.WriteLine("sent:winners:3:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money + ":" + SitNumOfWinnerArray[1] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]].money + ":" + SitNumOfWinnerArray[2] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]].money);
+                            break;
+                        }
+                    case 4:
+                        {
+                            foreach (Client client in ThisLobby.getArrayOfClients())
+                                if (client != null)
+                                    if (client.TableSitNum == SitNumOfWinnerArray[0] || client.TableSitNum == SitNumOfWinnerArray[1] || client.TableSitNum == SitNumOfWinnerArray[2] || client.TableSitNum == SitNumOfWinnerArray[3])
+                                        client.addMoney(ThisLobby.getTableTotalMoney() / 4);
+                            ThisLobby.GameNotOngoing();
+                            ThisLobby.kickAllMarkedToLeave();
+                            Thread.Sleep(50);
+                            RevealAllCards();
+                            Thread.Sleep(50);
+                            SendMessage("winners:3:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money + ":" + SitNumOfWinnerArray[1] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]].money + ":" + SitNumOfWinnerArray[2] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]].money + ":" + SitNumOfWinnerArray[3] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[3]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[3]].money, ThisLobby);
+                            Console.WriteLine("sent:winners:3:" + SitNumOfWinnerArray[0] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[0]].money + ":" + SitNumOfWinnerArray[1] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[1]].money + ":" + SitNumOfWinnerArray[2] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[2]].money + ":" + SitNumOfWinnerArray[3] + ":" + ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[3]]._clientNick + ":" +
+                            ThisLobby.getArrayOfClients()[SitNumOfWinnerArray[3]].money);
+                            break;
+                        }
+                }
             }
             else
             {
@@ -303,11 +389,21 @@ namespace Server_for_projuct2
                 Timeout.Stop();
             }
         }
+        /// <summary>
+        /// Generates a random key of the specified length.
+        /// </summary>
+        /// <param name="Length">The length of the random key to generate.</param>
+        /// <returns>A string representing the random key.</returns>
         public static string RandomKey(int Length)
         {
+            // Characters to use for generating the random key
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string (Enumerable.Repeat(chars, Length).Select(s => s[_random.Next(s.Length)]).ToArray());
+
+            // Generate the random key using LINQ and Enumerable.Repeat
+            return new string(Enumerable.Repeat(chars, Length)
+                .Select(s => s[_random.Next(s.Length)]).ToArray());
         }
+
         public void setCards(string card,int index)
         {
             Cards[index] = card;
@@ -369,6 +465,11 @@ namespace Server_for_projuct2
                                     SendMessage("regist:password_taken:");
                                     Console.WriteLine("sent:password_taken");
                                 }
+                                else if (!IsValidEmail(parts[3]))
+                                {
+                                    SendMessage("regist:email_not_valid:");
+                                    Console.WriteLine("sent:regist:email_not_valid");
+                                }
                                 else
                                 {
                                     string connectionString = SQLFilePath;
@@ -416,9 +517,14 @@ namespace Server_for_projuct2
                                 //if login ok;
                                 if (isExistUsername(parts[1]) && isExistPassword(parts[2]))
                                 {
-                                    SendMessage("login:ok:");
-                                    Console.WriteLine("sent: login ok");
-                                    _clientNick = parts[1];
+                                    if (!isUserLoggedIn(parts[1]))
+                                    {
+                                        SendMessage("login:ok:");
+                                        Console.WriteLine("sent: login ok");
+                                        _clientNick = parts[1];
+                                        LoggedUsers.Add(_clientNick);
+                                    }
+                                    else SendMessage("login:user_already_logged_in");
                                 }
                                 else
                                 {
@@ -534,6 +640,7 @@ namespace Server_for_projuct2
                                     if (temp.getArrayOfClients()[0] == null)
                                     {
                                         isHost = true;
+                                        isInGame = true;
                                         temp.setValue(lobby);
                                         ThisLobby = temp;
                                         TableSitNum = 0;
@@ -543,6 +650,7 @@ namespace Server_for_projuct2
                                     else if (temp.getNext() == null)
                                     {
                                         isHost = true;
+                                        isInGame = true;
                                         temp.setNext(new Node(lobby));
                                         ThisLobby = temp;
                                         TableSitNum = 0;
@@ -593,7 +701,7 @@ namespace Server_for_projuct2
                                 Node temp = Lobbys;
                                 while (temp != null)
                                 {
-                                    if (temp.getArrayOfClients()[0]==null) 
+                                    if (temp.getArrayOfClients()[0] == null || temp.isGameOngoin()) 
                                     {
                                         SendMessage("join:invalid");
                                         Console.WriteLine("sent:join:invalid");
@@ -604,10 +712,9 @@ namespace Server_for_projuct2
                                         if (temp.getArrayOfClients()[i] == null)
                                         {
                                             temp.setValue(this,i);
+                                            isInGame = true;
                                             ThisLobby = temp;
                                             TableSitNum = i;
-                                            if(ThisLobby.isGameOngoin())
-                                                IsSpectating = true;
                                             SendMessage("join:valid:" + money);
                                             Console.WriteLine("sent:join:valid:" + money);
                                             Thread.Sleep(600);
@@ -706,6 +813,10 @@ namespace Server_for_projuct2
                                 SendMessage("reveal:" + TableSitNum + ":" + ThisLobby.getArrayOfClients()[0].Cards[0] + ":"
                                     + ThisLobby.getArrayOfClients()[0].Cards[1] + ":" + ThisLobby.getArrayOfClients()[0]._clientNick);
                             }
+                            else if (parts[1].Equals("leave"))
+                            {
+                                SendMessage("leave:" + TableSitNum);
+                            }
                         }
                         else if (messageReceived.StartsWith("call"))
                         {
@@ -789,23 +900,8 @@ namespace Server_for_projuct2
                         }
                         else if (messageReceived.StartsWith("leave"))
                         {
-                            //ThisLobby.getArrayOfClients()[TableSitNum] = null;
-                            int i;
-                            if(TableSitNum != 6)
-                            {
-                                for(i = 0; i < 7-TableSitNum; i++)
-                                {
-                                    if (TableSitNum + i + 1 != 7)
-                                        if(ThisLobby.getArrayOfClients()[TableSitNum + i + 1] != null)
-                                            ThisLobby.getArrayOfClients()[TableSitNum + i] = ThisLobby.getArrayOfClients()[TableSitNum + i + 1];
-                                    else 
-                                    {
-                                        ThisLobby.getArrayOfClients()[TableSitNum + i] = null;
-                                        break;
-                                    }
-                                    SendMessage("switch:" + (TableSitNum+i),ThisLobby);
-                                }
-                            }
+                            if(!ThisLobby.isGameOngoin())
+                                ClientLeave();
                         }
                         else if (messageReceived.StartsWith("new_game"))
                         {
@@ -847,6 +943,19 @@ namespace Server_for_projuct2
             catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());
+                if (isInGame)
+                {
+                    IsFolded= true;
+                    MarkedToLeave = true;
+                    ThisLobby.getArrayOfClients()[TableSitNum] = null;
+                    ClientLeave();
+                    if (CheckIfAllAreFolded())
+                    {
+                        ThisLobby.setRoundNum(4);
+                        roundEnd();
+                    }
+                }
+                LoggedUsers.Remove(_clientNick);
                 AllClients.Remove(_clientIP);
             }
         }//end ReceiveMessage
@@ -854,20 +963,64 @@ namespace Server_for_projuct2
         /// allow the server to send messages to the client.
         /// </summary>
         /// <param name="message"></param>
-        public static string CreateMD5Hash(string Input)//crypts passwords
+        public void ClientLeave()
+        {
+            if (!ThisLobby.isGameOngoin())
+            {
+                int tableSitNum = TableSitNum;
+                isHost = false;
+                isInGame = false;
+                ThisLobby.getArrayOfClients()[tableSitNum] = null;
+                SendMessage("leave:" + tableSitNum, ThisLobby);
+                Console.WriteLine("sent:leave:" + TableSitNum);
+                int i;
+                for (i = 0; i < 7 - tableSitNum; i++)
+                {
+                    if (tableSitNum + i + 1 != 7)
+                    {
+                        if (ThisLobby.getArrayOfClients()[tableSitNum + i + 1] != null)
+                        {
+                            Thread.Sleep(100);
+                            ThisLobby.getArrayOfClients()[tableSitNum + i] = ThisLobby.getArrayOfClients()[tableSitNum + i + 1];
+                            ThisLobby.getArrayOfClients()[tableSitNum + i].TableSitNum = tableSitNum + i;
+                            if (tableSitNum + i == 0)
+                            {
+                                ThisLobby.getArrayOfClients()[tableSitNum + i].isHost = true;
+                                ThisLobby.getArrayOfClients()[tableSitNum + i].SendMessage("Host:true");
+                                Console.WriteLine("sent:Host:true");
+                            }
+                            ThisLobby.getArrayOfClients()[tableSitNum + i + 1] = null;
+                            SendMessage("switch:" + (tableSitNum + i), ThisLobby);
+                            Console.WriteLine("sent:switch:" + (tableSitNum + i));
+                            Thread.Sleep(200);
+                        }
+                    }
+                    else break;
+                }
+            }
+            else MarkedToLeave = true;
+        }
+        /// <summary>
+        /// Creates an MD5 hash from the input string, typically used for encrypting passwords.
+        /// </summary>
+        /// <param name="Input">The input string to hash.</param>
+        /// <returns>A string representing the MD5 hash of the input.</returns>
+        public static string CreateMD5Hash(string Input)
         {
             // Step 1, calculate MD5 hash from input
             System.Security.Cryptography.MD5 Md5 = System.Security.Cryptography.MD5.Create();
-        byte[] InputBytes = System.Text.Encoding.ASCII.GetBytes(Input);
-        byte[] HashBytes = Md5.ComputeHash(InputBytes);
-        // Step 2, convert byte array to hex string
-        StringBuilder StringBuilder = new StringBuilder();
-            for (int i = 0; i<HashBytes.Length; i++)
+            byte[] InputBytes = System.Text.Encoding.ASCII.GetBytes(Input);
+            byte[] HashBytes = Md5.ComputeHash(InputBytes);
+
+            // Step 2, convert byte array to hex string
+            StringBuilder StringBuilder = new StringBuilder();
+            for (int i = 0; i < HashBytes.Length; i++)
             {
                 StringBuilder.Append(HashBytes[i].ToString("X2"));
             }
             return StringBuilder.ToString();
         }
+
         /// <summary>
         /// Receives a string and sends it to all the clients that are connected to the lobby.
         /// </summary>
@@ -1049,53 +1202,74 @@ namespace Server_for_projuct2
             return regex.IsMatch(email);
         }
     }
+    /// <summary>
+    /// Represents an email sender that uses SMTP to send emails.
+    /// </summary>
     public class Emailer
     {
-        private string smtpServer;
+        // The SMTP server address.
+        private string smtpServerIP;
+        // The SMTP port number.
         private int smtpPort;
+        // The passcode generated by the Emailer.
         private int code;
-        public Emailer(string server, int port)
+        /// <summary>
+        /// Initializes a new instance of the Emailer class with the specified SMTP server and port.
+        /// </summary>
+        /// <param name="serverIP">The SMTP server address.</param>
+        /// <param name="port">The SMTP port number.</param>
+        public Emailer(string serverIP, int port)
         {
-            smtpServer = server;
+            smtpServerIP = serverIP;
             smtpPort = port;
             Random rand = new Random();
             code = rand.Next(11111, 99999);
         }
         /// <summary>
-        /// Returns the passcode
+        /// Gets the passcode generated by the Emailer.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The passcode.</returns>
         public int getPasscode()
         {
             return this.code;
         }
-
         /// <summary>
-        /// Sends and email with the passcode to the required email
+        /// Sends an email with the passcode to the specified email address.
         /// </summary>
-        /// <param name="email"></param>
-        /// <returns></returns>
+        /// <param name="email">The recipient's email address.</param>
+        /// <returns>The passcode sent in the email.</returns>
         public int SendEmail(string email)
         {
             var smtpClient = new SmtpClient("smtp.gmail.com", 25);
             smtpClient.DeliveryMethod = SmtpDeliveryMethod.Network;
             smtpClient.UseDefaultCredentials = false;
             smtpClient.EnableSsl = true;
-            //olxtxpzmaacefmrh
-            //uafhlbdjikglfyfr
             smtpClient.Credentials = new NetworkCredential("cybergeemail@gmail.com", "olxtxpzmaacefmrh");
             var message = new System.Net.Mail.MailMessage("cybergeemail@gmail.com", email, "Account verification password", "Your password is: " + this.code);
             smtpClient.Send(message);
             return this.code;
         }
     }
+    /// <summary>
+    /// Provides RSA encryption and decryption services.
+    /// </summary>
     internal class RSAServiceProvider
     {
+        // The private key for RSA encryption.
         private string PrivateKey;
+
+        // The public key for RSA encryption.
         private string PublicKey;
+
+        // The Unicode encoder for data conversion.
         private UnicodeEncoding Encoder;
+
+        // The RSACryptoServiceProvider for RSA operations.
         private RSACryptoServiceProvider RSA;
 
+        /// <summary>
+        /// Initializes a new instance of the RSAServiceProvider class.
+        /// </summary>
         public RSAServiceProvider()
         {
             Encoder = new UnicodeEncoding();
@@ -1104,48 +1278,30 @@ namespace Server_for_projuct2
             PrivateKey = RSA.ToXmlString(true);
             PublicKey = RSA.ToXmlString(false);
         }
+
         /// <summary>
-        /// return PrivateKey
+        /// Gets the private key for RSA encryption.
         /// </summary>
-        /// <returns>PrivateKey</returns>
+        /// <returns>The private key.</returns>
         public string GetPrivateKey()
         {
             return this.PrivateKey;
         }
+
         /// <summary>
-        /// return PublicKey
+        /// Gets the public key for RSA encryption.
         /// </summary>
-        /// <returns>PublicKey</returns>
+        /// <returns>The public key.</returns>
         public string GetPublicKey()
         {
             return this.PublicKey;
         }
         /// <summary>
-        /// decript data by privateKey
+        /// Encrypts data using the public key.
         /// </summary>
-        /// <param name="Data">data to decript</param>
-        /// /// <param name="PrivateKey">privateKey</param>
-        /// <returns>decripted data</returns>
-        public string Decrypt(string Data, string PrivateKey)
-        {
-
-            var DataArray = Data.Split(new char[] { ',' });
-            byte[] DataByte = new byte[DataArray.Length];
-            for (int i = 0; i < DataArray.Length; i++)
-            {
-                DataByte[i] = Convert.ToByte(DataArray[i]);
-            }
-
-            RSA.FromXmlString(PrivateKey);
-            var DecryptedByte = RSA.Decrypt(DataByte, false);
-            return Encoder.GetString(DecryptedByte);
-        }
-        /// <summary>
-        /// Encrypt the data by public key
-        /// </summary>
-        /// <param name="Data">data to encrypt</param>
-        /// <param name="PublicKey"></param>
-        /// <returns>encripted data</returns>
+        /// <param name="Data">The data to encrypt.</param>
+        /// <param name="PublicKey">The public key.</param>
+        /// <returns>The encrypted data.</returns>
         public string Encrypt(string Data, string PublicKey)
         {
             var Rsa = new RSACryptoServiceProvider();
@@ -1167,8 +1323,18 @@ namespace Server_for_projuct2
             return StringBuilder.ToString();
         }
     }
+    /// <summary>
+    /// Provides AES encryption and decryption services.
+    /// </summary>
     internal class AESServiceProvider
     {
+        /// <summary>
+        /// Encrypts a plain text using AES with the specified key and initialization vector (IV).
+        /// </summary>
+        /// <param name="plainText">The plain text to encrypt.</param>
+        /// <param name="Key">The AES encryption key.</param>
+        /// <param name="IV">The AES initialization vector (IV).</param>
+        /// <returns>The encrypted text.</returns>
         public static string Encrypt(string plainText, byte[] Key, byte[] IV)
         {
             // Check arguments.
@@ -1179,14 +1345,11 @@ namespace Server_for_projuct2
             if (IV == null || IV.Length <= 0)
                 throw new ArgumentNullException("IV");
             string encrypted;
-
-            // Create an Aes object
-            // with the specified key and IV.
+            // Create an Aes object with the specified key and IV.
             using (Aes aesAlg = Aes.Create())
             {
                 aesAlg.Key = Key;
                 aesAlg.IV = IV;
-
                 // Create an encryptor to perform the stream transform.
                 ICryptoTransform encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
 
@@ -1204,100 +1367,16 @@ namespace Server_for_projuct2
                     }
                 }
             }
-
-            // Return the encrypted string from the memory stream.
-            return encrypted;
-        }
-        public static byte[] EncryptToBytes(string plainText, byte[] Key, byte[] IV)
-        {
-            // Check arguments.
-            if (plainText == null || plainText.Length <= 0)
-                throw new ArgumentNullException("plainText");
-            if (Key == null || Key.Length <= 0)
-                throw new ArgumentNullException("Key");
-            if (IV == null || IV.Length <= 0)
-                throw new ArgumentNullException("IV");
-            byte[] encrypted;
-
-            // Create an Aes object
-            // with the specified key and IV.
-            using (Aes aesAlg = Aes.Create())
-            {
-                aesAlg.Key = Key;
-                aesAlg.IV = IV;
-
-                // Create an encryptor to perform the stream transform.
-                ICryptoTransform encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
-
-                // Create the streams used for encryption.
-                using (MemoryStream msEncrypt = new MemoryStream())
-                {
-                    using (CryptoStream csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
-                    {
-                        using (StreamWriter swEncrypt = new StreamWriter(csEncrypt))
-                        {
-                            //Write all data to the stream.
-                            swEncrypt.Write(plainText);
-                        }
-                        encrypted = msEncrypt.ToArray();
-                    }
-                }
-            }
-
             // Return the encrypted string from the memory stream.
             return encrypted;
         }
         /// <summary>
-        /// 
+        /// Decrypts a cipher text using AES with the specified key and initialization vector (IV).
         /// </summary>
-        /// <param name="cipherText"></param>
-        /// <param name="Key"></param>
-        /// <param name="IV"></param>
-        /// <returns>Decrypt String</returns>
-        /// <exception cref="ArgumentNullException"></exception>
-        public static string DecryptFromByte(byte[] cipherText, byte[] Key, byte[] IV)
-        {
-            // Check arguments.
-            if (cipherText == null || cipherText.Length <= 0)
-                throw new ArgumentNullException("cipherText");
-            if (Key == null || Key.Length <= 0)
-                throw new ArgumentNullException("Key");
-            if (IV == null || IV.Length <= 0)
-                throw new ArgumentNullException("IV");
-
-            // Declare the string used to hold
-            // the decrypted text.
-            string plaintext = null;
-
-            // Create an Aes object
-            // with the specified key and IV.
-            using (Aes aesAlg = Aes.Create())
-            {
-                aesAlg.Key = Key;
-                aesAlg.IV = IV;
-
-                // Create a decryptor to perform the stream transform.
-                ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
-
-                // Create the streams used for decryption.
-                using (MemoryStream msDecrypt = new MemoryStream(cipherText))
-                {
-                    using (CryptoStream csDecrypt = new CryptoStream((Stream)msDecrypt, decryptor, CryptoStreamMode.Read))
-                    {
-                        using (StreamReader srDecrypt = new StreamReader((Stream)csDecrypt))
-                        {
-
-                            // Read the decrypted bytes from the decrypting stream
-                            // and place them in a string.
-                            plaintext = srDecrypt.ReadToEnd();
-                        }
-                    }
-                }
-            }
-
-            return plaintext;
-        }
-
+        /// <param name="cipherText">The encrypted string to decrypt.</param>
+        /// <param name="Key">The AES decryption key.</param>
+        /// <param name="IV">The AES initialization vector (IV).</param>
+        /// <returns>The decrypted string.</returns>
         public static string Decrypt(string cipherText, byte[] Key, byte[] IV)
         {
             // Check arguments.
@@ -1308,12 +1387,10 @@ namespace Server_for_projuct2
             if (IV == null || IV.Length <= 0)
                 throw new ArgumentNullException("IV");
 
-            // Declare the string used to hold
-            // the decrypted text.
             string plaintext = null;
             byte[] buffer = Convert.FromBase64String(cipherText);
-            // Create an Aes object
-            // with the specified key and IV.
+
+            // Create an Aes object with the specified key and IV.
             using (Aes aesAlg = Aes.Create())
             {
                 aesAlg.Key = Key;
@@ -1325,46 +1402,47 @@ namespace Server_for_projuct2
                 // Create the streams used for decryption.
                 using (MemoryStream msDecrypt = new MemoryStream(buffer))
                 {
-                    using (CryptoStream csDecrypt = new CryptoStream((Stream)msDecrypt, decryptor, CryptoStreamMode.Read))
+                    using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))
                     {
-                        using (StreamReader srDecrypt = new StreamReader((Stream)csDecrypt))
+                        using (StreamReader srDecrypt = new StreamReader(csDecrypt))
                         {
-
-                            // Read the decrypted bytes from the decrypting stream
-                            // and place them in a string.
+                            // Read the decrypted bytes from the decrypting stream and place them in a string.
                             plaintext = srDecrypt.ReadToEnd();
                         }
                     }
                 }
             }
-
             return plaintext;
         }
     }
     class Node
     {
+        // Array of clients.
         private Client[] ClientArray;
+        // Array of cards.
         private string[] CardArray = {"diamond:2","diamond:3","diamond:4","diamond:5", "diamond:6", "diamond:7", "diamond:8"
         ,"diamond:9","diamond:10","diamond:11","diamond:12","diamond:13","diamond:14","club:2","club:3","club:4","club:5","club:6","club:7","club:8"
         ,"club:9","club:10","club:11","club:12","club:13","club:14","spade:2","spade:3","spade:4","spade:5","spade:6","spade:7","spade:8","spade:9"
         ,"spade:10","spade:11","spade:12","spade:13","spade:14","heart:2","heart:3","heart:4","heart:5","heart:6","heart:7","heart:8","heart:9","heart:10"
         ,"heart:11","heart:12","heart:13","heart:14"};
+        // Array of cards on the table in the game.
         private string[] TableCards = new string[5];
+        // Array of hand strengths for each player.
         private HandStrength[] PlayerHandStrengths = new HandStrength[7];
+        // Amount of bet on the table.
         private int TableBetAmount = 5000;
+        // Total money on the table.
         private static int TableTotalMoney = 0;
+        // Round number in the game.
         private int RoundNum = 1;
+        // Flag indicating if the game is ongoing.
         private bool isGameOngoing = false;
+        // Reference to the next node in the linked list.
         private Node next;
         public Node(Client[] arr)
         {
             this.ClientArray = arr;
             this.next = null;
-        }
-        public Node(Client[] arr, Node next)
-        {
-            this.ClientArray = arr;
-            this.next = next;
         }
         public Client[] getArrayOfClients() { return this.ClientArray; }
         public string[] getArrayOfCards() { return this.CardArray; }
@@ -1410,15 +1488,8 @@ namespace Server_for_projuct2
             TableCards = new string[5];
         }
         public int getTableBetAmount() { return this.TableBetAmount; }
-        public void clearTableCards()
-        {
-            for (int i = 0; i < TableCards.Length; i++)
-                TableCards[i] = null;
-        }
         public Node getNext() { return this.next; }
         public void setNext(Node next) { this.next = next; }
-        public bool hasNext() { return this.next != null; }
-        public String toString() { return this.ClientArray + " " + this.next; }
         public void setPlayerHandStrength(HandStrength HS,int index)
         {
             PlayerHandStrengths[index] = HS;
@@ -1433,6 +1504,12 @@ namespace Server_for_projuct2
                     client.setPlacedBet(0);
                 }
             }
+        }
+        public void kickAllMarkedToLeave()
+        {
+            foreach (Client client in ClientArray)
+                if (client != null && client.isMarkedToLeave())
+                    client.ClientLeave();
         }
     }
 }

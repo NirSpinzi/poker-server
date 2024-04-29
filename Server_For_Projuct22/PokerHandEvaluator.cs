@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -36,7 +37,7 @@ namespace Server_For_Projuct22
             int value = int.Parse(parts[1]);
             return new Card(suit, value);
         }
-        public static int FindStrongestHand(HandStrength[] HSArray)
+        /*public static int FindStrongestHand(HandStrength[] HSArray)
         {
             int Index = 0;
             for(int i=1;i< HSArray.Length;i++)
@@ -51,6 +52,53 @@ namespace Server_For_Projuct22
                     Index = i;
             }
             return Index;
+        }*/
+        public static int[] FindStrongestHand(HandStrength[] HSArray)
+        {
+            List<int> winningIndex = new List<int>();
+            winningIndex.Add(0); // Start with the assumption that the first hand is the strongest
+            for (int i = 1; i < HSArray.Length; i++)
+            {
+                if (HSArray[0] == null)
+                {
+                    if (HSArray[i] != null)
+                    {
+                        winningIndex.Clear();
+                        winningIndex.Add(i);
+                    }
+                }
+                else if(HSArray[i] != null)
+                {
+                    int compareResult = CompareHands(HSArray[i], HSArray[winningIndex[0]]);
+                    if (compareResult > 0)
+                    {
+                        winningIndex.Clear(); // Clear previous index
+                        winningIndex.Add(i); // Add current index as the strongest
+                    }
+                    else if (compareResult == 0)
+                    {
+                        winningIndex.Add(i); // Add current index in case of a tie
+                    }
+                }
+            }
+            return winningIndex.ToArray();
+        }
+        private static int CompareHands(HandStrength hand1, HandStrength hand2)
+        {
+            if (hand1.Strength > hand2.Strength ||
+                (hand1.Strength == hand2.Strength && hand1.SubStrength > hand2.SubStrength))
+            {
+                return 1; // hand1 is stronger
+            }
+            else if (hand1.Strength < hand2.Strength ||
+                     (hand1.Strength == hand2.Strength && hand1.SubStrength < hand2.SubStrength))
+            {
+                return -1; // hand2 is stronger
+            }
+            else
+            {
+                return 0; // hands are tied
+            }
         }
         public static HandStrength EvaluateHand(string[] playerHand, string[] tableCards)
         {
@@ -65,7 +113,7 @@ namespace Server_For_Projuct22
                 return new HandStrength(6, IsFlush(cards));
             if(IsStraight(cards) > 0)
                 return new HandStrength(5, IsStraight(cards));
-            return new HandStrength(int.Parse(EvaluateHandType(cards).Split(':')[0]), int.Parse(EvaluateHandType(cards).Split(':')[1]));
+            return EvaluateHandType(cards);
         }
         public static int IsFlush(List<Card> cards)
         {
@@ -110,7 +158,7 @@ namespace Server_For_Projuct22
             }
             return cards[cards.Count - 1].Value; // Regular straight, return the highest card
         }
-        public static string EvaluateHandType(List<Card> cards)
+        public static HandStrength EvaluateHandType(List<Card> cards)
         {
             var valueCounts = cards.GroupBy(c => c.Value) // Counts how much cards there are for each value
                                    .ToDictionary(g => g.Key, g => g.Count());
@@ -121,7 +169,7 @@ namespace Server_For_Projuct22
             foreach (var pair in valueCounts)
             {
                 if (pair.Value == 4)
-                    return "8:"+pair.Key; // Four of a kind
+                    return new HandStrength(8, pair.Key); // Four of a kind
                 if (pair.Value == 3)
                 {
                         hasThreeOfAKind = true;
@@ -132,7 +180,7 @@ namespace Server_For_Projuct22
                     if (hasPair)
                     {
                         highestCardValue = Math.Max(highestCardValue, pair.Key); // Update highest card value for two pairs
-                        return "3:" + highestCardValue; // Two pair
+                        return new HandStrength(3, highestCardValue); // Two pair
                     }
                     else
                     {
@@ -147,19 +195,19 @@ namespace Server_For_Projuct22
             }
             if (hasThreeOfAKind&&hasPair)
             {
-                return "7:" + highestCardValue; // Full house
+                return new HandStrength(7, highestCardValue); // Full house
             }
             else if (hasThreeOfAKind)
             {
-                return "4:" + highestCardValue; // Three of a kind
+                return new HandStrength(4, highestCardValue); // Three of a kind
             }
             else if (hasPair)
             {
-                return "2:" + highestCardValue; // Pair
+                return new HandStrength(2, highestCardValue); // Pair
             }
             else
             {
-                return "1:" + highestCardValueNoPair; // High card (default)
+                return new HandStrength(1, highestCardValueNoPair); // High card (default)
             }
         }
     }
