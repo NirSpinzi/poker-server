@@ -78,10 +78,19 @@ namespace Server_for_projuct2
     /// </summary>
     public class DosProtection
     {
+        // Dictionary to log the time of each request based on IP address.
         private Dictionary<string, DateTime> requestTimeLog;
+
+        // Dictionary to log the count of requests based on IP address.
         private Dictionary<string, int> requestCountLog;
+
+        // Maximum number of requests allowed within the time window.
         private int maxRequests;
+
+        // Time window within which requests are monitored for DoS protection.
         private TimeSpan timeWindow;
+
+        // Object used for locking to ensure thread safety.
         private object lockObj = new object();
 
         /// <summary>
