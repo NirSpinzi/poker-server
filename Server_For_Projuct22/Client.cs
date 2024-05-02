@@ -108,6 +108,8 @@ namespace Server_for_projuct2
         private bool PassedResetPhaseTwo = false;
         // Stores the answers to the captcha.
         private string[] CaptchaAnswers = {"RecAptChA", "iaMHUM@N", "CPReKXAER5", "11", "tmincrw", "ahR5", "Q41cNH", "Zaves"};
+        // A flag indicating wether the client has logged in.
+        private bool IsLoggedIn = false;
         /// <summary>
         /// When the client gets connected to the server the server will create an instance of the ChatClient and pass the TcpClient
         /// </summary>
@@ -569,6 +571,7 @@ namespace Server_for_projuct2
                                             SendMessage("login:ok:");
                                             Console.WriteLine("sent: login ok");
                                             _clientNick = parts[1];
+                                            IsLoggedIn = true;
                                             LoggedUsers.Add(_clientNick);
                                         }
                                         else SendMessage("login:user_already_logged_in");
@@ -697,7 +700,7 @@ namespace Server_for_projuct2
                             }
                             else SendMessage("reset:email:notexist");
                         }
-                        else if (messageReceived.StartsWith("game"))
+                        else if (messageReceived.StartsWith("game") && IsLoggedIn)
                         {
                             string[] parts = messageReceived.Split(':');
                             if (parts[1].Equals("host") && !isHost) // Handles the request to host a game.
@@ -730,7 +733,7 @@ namespace Server_for_projuct2
                                     else temp = temp.getNext();
                                 }
                             }
-                            else if (parts[1].Equals("start")) // handles the reqeust to start a game.
+                            else if (parts[1].Equals("start") && IsLoggedIn) // handles the reqeust to start a game.
                             {
                                 if (isHost && !ThisLobby.isGameOngoin())
                                 {
@@ -764,7 +767,7 @@ namespace Server_for_projuct2
                                     }
                                 }
                             }
-                            else if (parts[1].Equals("join")) // handles the the requests to join a lobby
+                            else if (parts[1].Equals("join") && IsLoggedIn) // handles the the requests to join a lobby
                             {
                                 Node temp = Lobbys;
                                 bool isJoinValid = false;
@@ -804,7 +807,7 @@ namespace Server_for_projuct2
                                 }
                             }
                         }
-                        else if (messageReceived.StartsWith("isHost")) // tells the client whether they are a host.
+                        else if (messageReceived.StartsWith("isHost") && IsLoggedIn) // tells the client whether they are a host.
                         {
                             if (isHost)
                             {
@@ -817,7 +820,7 @@ namespace Server_for_projuct2
                                 Console.WriteLine("sent:Host:false");
                             }
                         }
-                        else if (messageReceived.StartsWith("table")) // Handles the messeges that come as a response to the sent messeges that are aimed at the host when the client is not the host.
+                        else if (messageReceived.StartsWith("table") && IsLoggedIn) // Handles the messeges that come as a response to the sent messeges that are aimed at the host when the client is not the host.
                         {
                             string[] parts = messageReceived.Split(':');
                             if (parts[1].Equals("names"))
@@ -886,7 +889,7 @@ namespace Server_for_projuct2
                                 SendMessage("leave:" + TableSitNum);
                             }
                         }
-                        else if (messageReceived.StartsWith("call")) // handles the call requests from the client
+                        else if (messageReceived.StartsWith("call") && IsLoggedIn) // handles the call requests from the client
                         {
                             if (IsMyTurn && !IsFolded)
                             {
@@ -912,7 +915,7 @@ namespace Server_for_projuct2
                                 TurnToNextPlayer(TableSitNum); // after their turn passes it to next player
                             }
                         }
-                        else if (messageReceived.StartsWith("fold")) // handles the fold reqeusts from the client.
+                        else if (messageReceived.StartsWith("fold") && IsLoggedIn) // handles the fold reqeusts from the client.
                         {
                             if(IsMyTurn && !IsFolded)
                             {
@@ -929,7 +932,7 @@ namespace Server_for_projuct2
                                     TurnToNextPlayer(TableSitNum); // after their turn passes it to next player
                             }
                         }
-                        else if (messageReceived.StartsWith("raise")) // handels the raise reqeust from the client.
+                        else if (messageReceived.StartsWith("raise") && IsLoggedIn) // handels the raise reqeust from the client.
                         {
                             if (IsMyTurn && !IsFolded)
                             {
@@ -966,12 +969,12 @@ namespace Server_for_projuct2
                                 }
                             }
                         }
-                        else if (messageReceived.StartsWith("leave")) // handels the leave mid game requests from the client.
+                        else if (messageReceived.StartsWith("leave") && IsLoggedIn) // handels the leave mid game requests from the client.
                         {
-                            if(!ThisLobby.isGameOngoin())
+                            if(!ThisLobby.isGameOngoin() && isInGame)
                                 ClientLeave();
                         }
-                        else if (messageReceived.StartsWith("new_game")) // handels the reqeusts to play again from the client.
+                        else if (messageReceived.StartsWith("new_game") && IsLoggedIn) // handels the reqeusts to play again from the client.
                         {
                             if (isHost && !ThisLobby.isGameOngoin())
                             {
