@@ -487,16 +487,14 @@ namespace Server_for_projuct2
                         messageReceived= messageReceived.Substring(6);
                         ClientPublicKey =  messageReceived;
                         SendMessage("PogurS" + Rsa.GetPublicKey());
-                        //SendMessage(EncryptionServerPublicKeyReciever + "$" + Rsa.GetPublicKey());
                         SymmetricKey = RandomKey(32);
                         string EncryptedSymmerticKey = Rsa.Encrypt(SymmetricKey, ClientPublicKey);
                         SendMessage("YavulS" + EncryptedSymmerticKey);
-                        //SendMessage(EncryptionSymmetricKeyReciever + "$" + EncryptedSymmerticKey);
 
                     }
                     else
                     {
-                        byte[] Key = Encoding.UTF8.GetBytes(SymmetricKey);
+                        byte[] Key = Encoding.UTF8.GetBytes(SymmetricKey); // Decrypts the message.
                         byte[] IV = new byte[16];
                         messageReceived = AESServiceProvider.Decrypt(messageReceived, Key, IV);
                         if (messageReceived.StartsWith("regist:")) // Handles the registration.
@@ -540,15 +538,25 @@ namespace Server_for_projuct2
                         if (messageReceived.StartsWith("login:") && !IsTimedOut) // Handels the login.
                         {
                             string[] parts = messageReceived.Split(':');
-                            Regex regex = new Regex(@"[0-8]");
                             // Check if the Captcha number matches the regular expression
-                            if (!regex.IsMatch(parts[3]))
+                            if (!Regex.IsMatch(parts[3], "^[0-8]$"))
                             {
                                 Warnings++;
                                 TimeoutPlayer(); //Imidiate timeout because they tempered with the code for this to happen.
                                 SendMessage("login:captchaIncorrect:");
                                 Console.WriteLine("sent: login captcha incorrect");
-                            }                               
+                            }
+                            else if (Regex.IsMatch(parts[1], "[()=]") || Regex.IsMatch(parts[2], "[()=]")) // Most likely an attempted sql injection.
+                            {
+                                Strikes++;
+                                if (Strikes % 3 == 0)
+                                {
+                                    Warnings++;
+                                    TimeoutPlayer();
+                                }
+                                SendMessage("login:Not_ok:");
+                                Console.WriteLine("sent: login not ok");
+                            }
                             else
                             {
                                 if (parts[4].Equals(CaptchaAnswers[Int32.Parse(parts[3])-1])) // Is their answer (parts[4]) equal to the real answer.
@@ -1092,7 +1100,7 @@ namespace Server_for_projuct2
             }
         }
         /// <summary>
-        /// Receives a string and it to the client.
+        /// Receives a string sends and it to the client.
         /// </summary>
         /// <param name="message"></param>
         public void SendMessage(string message)
@@ -1102,7 +1110,7 @@ namespace Server_for_projuct2
                 System.Net.Sockets.NetworkStream ns;
                 lock (_client.GetStream())
                 {
-                    if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul")))
+                    if (!(message.StartsWith("Pogur")) && !(message.StartsWith("Yavul"))) // Encrypt the message
                     {
                         byte[] Key = Encoding.UTF8.GetBytes(SymmetricKey);
                         byte[] IV = new byte[16];
